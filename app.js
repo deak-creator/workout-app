@@ -1381,9 +1381,14 @@ function qaSetModalMode(editing) {
 
 // Rebuild editable ingredients from a saved meal. Meals saved before editing existed
 // only stored name + grams per ingredient, so they load as one combined "original recipe" ingredient.
+function qaMealHasFullIngredients(meal) {
+  const ings = meal.ingredients || [];
+  return ings.length > 0 && ings.every(i => i.per100);
+}
+
 function qaIngredientsFromMeal(meal) {
   const ings = meal.ingredients || [];
-  if (ings.length && ings.every(i => i.per100)) {
+  if (qaMealHasFullIngredients(meal)) {
     return ings.map(i => ({
       id: ++qaIngredientSeq,
       name: i.name,
@@ -1410,19 +1415,63 @@ function qaIngredientsFromMeal(meal) {
   }];
 }
 
-function qaOpenEditModal(index) {
+// Older meals only stored name/brand/grams. Each ingredient originally came from Open Food Facts,
+// so look it up again by name + brand to get its per-100 g nutrition back. Returns null if any can't be found.
+async function qaRebuildLegacyIngredients(meal, signal) {
+  const rebuilt = [];
+  for (const saved of meal.ingredients || []) {
+    const query = [saved.name, saved.brand].filter(Boolean).join(" ");
+    const data = await qaFetchSearchWithRetry(query, signal);
+    const products = (data.products || []).filter(p => p.product_name === saved.name);
+    const match = products.find(p => (p.brands || "") === (saved.brand || "")) || products[0];
+    if (!match) return null;
+    const ing = qaIngredientFromProduct(match);
+    ing.unit = "g";
+    ing.qty = Math.round(saved.grams * 10) / 10;
+    rebuilt.push(ing);
+  }
+  return rebuilt;
+}
+
+let qaRebuildAbort = null;
+
+async function qaOpenEditModal(index) {
   const meal = qaGetSavedMeals()[index];
   if (!meal) return;
   qaOpenModal();
   qaEditingIndex = index;
   qaSetModalMode(true);
-  qaIngredients = qaIngredientsFromMeal(meal);
   qaServings = meal.servings || 1;
   document.getElementById("qa-meal-name").value = meal.name;
+  if (qaMealHasFullIngredients(meal)) {
+    qaIngredients = qaIngredientsFromMeal(meal);
+    qaRenderIngredients();
+    return;
+  }
+
+  document.getElementById("qa-ingredients-list").innerHTML = `<div class="empty-state">Loading ingredients…</div>`;
+  document.getElementById("qa-next-btn").disabled = true;
+  if (qaRebuildAbort) qaRebuildAbort.abort();
+  const ctrl = new AbortController();
+  qaRebuildAbort = ctrl;
+  let rebuilt = null;
+  try {
+    rebuilt = await qaRebuildLegacyIngredients(meal, ctrl.signal);
+  } catch (err) {
+    rebuilt = null;
+  }
+  // user closed the editor or opened a different meal while we were loading
+  if (ctrl.signal.aborted || qaEditingIndex !== index || document.getElementById("quickadd-modal").hidden) return;
+  qaIngredients = rebuilt || qaIngredientsFromMeal(meal);
   qaRenderIngredients();
+  if (!rebuilt) {
+    document.getElementById("qa-ingredients-list").insertAdjacentHTML("afterbegin",
+      `<div class="qa-edit-note">Couldn't look up the original ingredients (check your connection), so this older meal is shown as one item. You can still scale it, add ingredients, or rename it.</div>`);
+  }
 }
 
 function qaOpenModal() {
+  if (qaRebuildAbort) qaRebuildAbort.abort();
   qaEditingIndex = null;
   qaSetModalMode(false);
   qaIngredients = [];
@@ -1438,6 +1487,7 @@ function qaOpenModal() {
   document.getElementById("quickadd-modal").hidden = false;
 }
 function qaCloseModal() {
+  if (qaRebuildAbort) qaRebuildAbort.abort();
   document.getElementById("quickadd-modal").hidden = true;
 }
 
@@ -1525,7 +1575,7 @@ async function qaRunSearch(query) {
 }
 
 // ---------- add a searched product as an ingredient card ----------
-function qaAddProduct(p) {
+function qaIngredientFromProduct(p) {
   const n = p.nutriments || {};
   const per100 = {
     calories: n["energy-kcal_100g"] ?? 0,
@@ -1545,6 +1595,11 @@ function qaAddProduct(p) {
     qty: 1,
     unit: "serving"
   };
+  return ing;
+}
+
+function qaAddProduct(p) {
+  const ing = qaIngredientFromProduct(p);
   qaIngredients.push(ing);
   document.getElementById("qa-search-input").value = "";
   document.getElementById("qa-search-results").hidden = true;
