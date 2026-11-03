@@ -155,6 +155,7 @@ html, body {
 .saved-item .sub { color: #6a84b8; font-size: 13px; margin-top: 2px; }
 .saved-item .saved-actions { display: flex; gap: 14px; flex-shrink: 0; margin-left: 12px; }
 .saved-item .saved-actions .saved-edit-btn { color: #93c5fd; }
+.qa-edit-note { color: #93c5fd; font-size: 13px; line-height: 1.4; background: #0d1730; border: 1px solid #1f3166; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
 .saved-item button {
   background: none;
   border: none;
