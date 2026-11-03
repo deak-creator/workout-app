@@ -774,8 +774,15 @@ function renderSavedMeals() {
         <div class="title">${meal.name}</div>
         <div class="sub">${date.toLocaleDateString()} · ${Math.round(meal.perServing.calories)} kcal/serving · ${meal.servings.toFixed(2)} servings</div>
       </div>
-      <button data-i="${i}">Delete</button>
+      <div class="saved-actions">
+        <button type="button" class="saved-edit-btn">Edit</button>
+        <button type="button" class="saved-delete-btn">Delete</button>
+      </div>
     `;
+    item.querySelector(".saved-edit-btn").addEventListener("click", e => {
+      e.stopPropagation();
+      qaOpenEditModal(i);
+    });
     item.querySelector("div").addEventListener("click", () => {
       addFoodEntry({
         name: meal.name,
@@ -790,7 +797,7 @@ function renderSavedMeals() {
       updateHomeStats();
       showTab("nutrition-screen");
     });
-    item.querySelector("button").addEventListener("click", e => {
+    item.querySelector(".saved-delete-btn").addEventListener("click", e => {
       e.stopPropagation();
       const arr = qaGetSavedMeals();
       arr.splice(i, 1);
@@ -1364,7 +1371,60 @@ function qaSetSavedMeals(meals) {
   localStorage.setItem("savedMeals", JSON.stringify(meals));
 }
 
+let qaEditingIndex = null; // index into savedMeals while editing, null when creating a new meal
+
+function qaSetModalMode(editing) {
+  document.getElementById("qa-title").textContent = editing ? "Edit Meal" : "Quick Add";
+  document.getElementById("qa-save-only-btn").textContent = editing ? "Save Changes" : "Save This Meal";
+  document.getElementById("qa-log-save-btn").textContent = editing ? "Log and Save Changes" : "Log and Save This Meal";
+}
+
+// Rebuild editable ingredients from a saved meal. Meals saved before editing existed
+// only stored name + grams per ingredient, so they load as one combined "original recipe" ingredient.
+function qaIngredientsFromMeal(meal) {
+  const ings = meal.ingredients || [];
+  if (ings.length && ings.every(i => i.per100)) {
+    return ings.map(i => ({
+      id: ++qaIngredientSeq,
+      name: i.name,
+      brand: i.brand || "",
+      per100: { ...i.per100 },
+      servingGrams: i.servingGrams || 100,
+      servingLabel: i.servingLabel || `serving (${Math.round(i.servingGrams || 100)} g)`,
+      qty: i.qty ?? i.grams,
+      unit: i.unit || "g"
+    }));
+  }
+  const totalGrams = ings.reduce((sum, i) => sum + (i.grams || 0), 0) || 100;
+  const per100 = {};
+  ["calories", "protein", "carbs", "fat"].forEach(k => { per100[k] = (meal.totals[k] || 0) * 100 / totalGrams; });
+  return [{
+    id: ++qaIngredientSeq,
+    name: `${meal.name} (original recipe)`,
+    brand: ings.map(i => i.name).join(", "),
+    per100,
+    servingGrams: totalGrams,
+    servingLabel: `whole recipe (${Math.round(totalGrams)} g)`,
+    qty: 1,
+    unit: "serving"
+  }];
+}
+
+function qaOpenEditModal(index) {
+  const meal = qaGetSavedMeals()[index];
+  if (!meal) return;
+  qaOpenModal();
+  qaEditingIndex = index;
+  qaSetModalMode(true);
+  qaIngredients = qaIngredientsFromMeal(meal);
+  qaServings = meal.servings || 1;
+  document.getElementById("qa-meal-name").value = meal.name;
+  qaRenderIngredients();
+}
+
 function qaOpenModal() {
+  qaEditingIndex = null;
+  qaSetModalMode(false);
   qaIngredients = [];
   qaIngredientSeq = 0;
   document.getElementById("qa-search-input").value = "";
@@ -1473,7 +1533,8 @@ function qaAddProduct(p) {
     carbs: n["carbohydrates_100g"] ?? 0,
     fat: n["fat_100g"] ?? 0
   };
-  const servingGrams = n["serving_quantity"] ? parseFloat(n["serving_quantity"]) : 100;
+  // serving_quantity is a top-level product field in Open Food Facts, not a nutriment
+  const servingGrams = parseFloat(p.serving_quantity) > 0 ? parseFloat(p.serving_quantity) : 100;
   const ing = {
     id: ++qaIngredientSeq,
     name: p.product_name,
@@ -1659,7 +1720,16 @@ function qaBuildMealObject() {
   return {
     name,
     servings: qaServings,
-    ingredients: qaIngredients.map(ing => ({ name: ing.name, brand: ing.brand, grams: qaIngredientGrams(ing) })),
+    ingredients: qaIngredients.map(ing => ({
+      name: ing.name,
+      brand: ing.brand,
+      grams: qaIngredientGrams(ing),
+      per100: ing.per100,
+      servingGrams: ing.servingGrams,
+      servingLabel: ing.servingLabel,
+      qty: ing.qty,
+      unit: ing.unit
+    })),
     totals,
     perServing: {
       calories: totals.calories / qaServings,
@@ -1673,7 +1743,13 @@ function qaBuildMealObject() {
 
 function qaSaveMealToLibrary(meal) {
   const meals = qaGetSavedMeals();
-  meals.unshift(meal);
+  if (qaEditingIndex !== null && meals[qaEditingIndex]) {
+    meal.createdAt = meals[qaEditingIndex].createdAt;
+    meal.updatedAt = new Date().toISOString();
+    meals[qaEditingIndex] = meal;
+  } else {
+    meals.unshift(meal);
+  }
   qaSetSavedMeals(meals);
 }
 
