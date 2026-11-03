@@ -1519,6 +1519,14 @@ function qaFormatTotals(t) {
   return `${Math.round(t.calories)} kcal · P ${Math.round(t.protein)}g · C ${Math.round(t.carbs)}g · F ${Math.round(t.fat)}g`;
 }
 
+function qaIngredientMacrosHtml(m) {
+  return `
+        <span>P <strong>${Math.round(m.protein)}g</strong></span>
+        <span>F <strong>${Math.round(m.fat)}g</strong></span>
+        <span>C <strong>${Math.round(m.carbs)}g</strong></span>
+        <span>Cal <strong>${Math.round(m.calories)}</strong></span>`;
+}
+
 function qaRenderIngredients() {
   const listEl = document.getElementById("qa-ingredients-list");
   const headingEl = document.getElementById("qa-ingredients-heading");
@@ -1555,12 +1563,7 @@ function qaRenderIngredients() {
         <input type="number" class="qa-ing-qty" value="${ing.qty}" min="0" step="0.5">
         <button type="button" class="qa-ing-unit-btn">${unitLabel}</button>
       </div>
-      <div class="qa-ing-macros">
-        <span>P <strong>${Math.round(m.protein)}g</strong></span>
-        <span>F <strong>${Math.round(m.fat)}g</strong></span>
-        <span>C <strong>${Math.round(m.carbs)}g</strong></span>
-        <span>Cal <strong>${Math.round(m.calories)}</strong></span>
-      </div>
+      <div class="qa-ing-macros">${qaIngredientMacrosHtml(m)}</div>
     `;
     card.querySelector(".qa-ing-remove").addEventListener("click", () => {
       qaIngredients = qaIngredients.filter(x => x.id !== ing.id);
@@ -1569,7 +1572,9 @@ function qaRenderIngredients() {
     card.querySelector(".qa-ing-qty").addEventListener("input", e => {
       const v = parseFloat(e.target.value);
       ing.qty = isNaN(v) || v < 0 ? 0 : v;
-      qaRenderIngredients();
+      // update numbers in place; re-rendering would destroy this input and close the iPhone keyboard
+      card.querySelector(".qa-ing-macros").innerHTML = qaIngredientMacrosHtml(qaIngredientMacros(ing));
+      document.getElementById("qa-total-text").textContent = qaFormatTotals(qaTotals());
     });
     card.querySelector(".qa-ing-unit-btn").addEventListener("click", () => qaOpenUnitPopup(ing));
     listEl.appendChild(card);
