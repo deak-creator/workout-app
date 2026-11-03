@@ -153,6 +153,8 @@ html, body {
 }
 .saved-item .title { font-weight: 600; color: #eef2ff; }
 .saved-item .sub { color: #6a84b8; font-size: 13px; margin-top: 2px; }
+.saved-item .saved-actions { display: flex; gap: 14px; flex-shrink: 0; margin-left: 12px; }
+.saved-item .saved-actions .saved-edit-btn { color: #93c5fd; }
 .saved-item button {
   background: none;
   border: none;
