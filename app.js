@@ -8,6 +8,21 @@ const ALL_EQUIPMENT = ["bodyweight", "dumbbells", "bands", "kettlebell", "pullup
 const HOME_EQUIPMENT = ["bodyweight", "dumbbells", "bands", "kettlebell", "pullup bar"];
 const GYM_EQUIPMENT = ALL_EQUIPMENT; // gyms typically have everything, including home-friendly gear
 
+// At the gym, home-style gear is still allowed but should rarely win: prefer barbell/cable/bench work.
+const GYM_EQUIPMENT_BIAS = { barbell: 3, "cable machine": 3, bench: 3, dumbbells: 2.5, kettlebell: 0.5, "pullup bar": 0, bands: -3, bodyweight: -2 };
+
+function isGymSession(params) {
+  if (params.location) return params.location === "gym";
+  const eq = params.equipment instanceof Set ? params.equipment : new Set(params.equipment || []);
+  return eq.has("barbell") || eq.has("cable machine");
+}
+
+// Only strength picks are biased: cardio/core/mobility are mostly bodyweight in the library.
+function gymEquipmentBias(ex, atGym) {
+  if (!atGym || ex.type !== "strength") return 0;
+  return GYM_EQUIPMENT_BIAS[ex.equipment] ?? 0;
+}
+
 const state = {
   mode: "quick",
   goal: "general",
@@ -88,6 +103,7 @@ document.getElementById("setup-form").addEventListener("submit", e => {
     duration: parseInt(state.duration, 10),
     difficulty: state.difficulty,
     equipment: new Set(state.location === "gym" ? GYM_EQUIPMENT : HOME_EQUIPMENT),
+    location: state.location,
     muscles: new Set(),
     goalPrompt,
     promptBias
@@ -312,9 +328,10 @@ function generateWorkout(params, dayFocus) {
   const effectiveGoal = dayFocus ? dayFocus.dayGoal : goal;
 
   const typeWeights = goalTypeWeights(effectiveGoal, promptBias);
+  const atGym = isGymSession(params);
 
   function score(ex) {
-    let s = typeWeights[ex.type] ?? 1;
+    let s = (typeWeights[ex.type] ?? 1) + gymEquipmentBias(ex, atGym);
     // nudge exercises toward any specific muscle groups called out in the prompt
     // (e.g. "focus on back" boosts back/pull exercises without filtering everything else out)
     if (promptBias.muscleFocus.length && ex.muscles) {
@@ -445,6 +462,10 @@ function findSwapCandidate(current, equipmentSet, maxDiff, excludeNames) {
     );
   }
   if (!candidates.length) return null;
+  if (isGymSession({ equipment: equipmentSet })) {
+    const best = Math.max(...candidates.map(ex => gymEquipmentBias(ex, true)));
+    candidates = candidates.filter(ex => gymEquipmentBias(ex, true) >= Math.min(best, 0));
+  }
   return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
@@ -712,7 +733,10 @@ function addExerciseCandidates(query) {
   return EXERCISES.filter(ex =>
     equipment.has(ex.equipment) && DIFF_RANK[ex.difficulty] <= maxDiff && !inWorkout.has(ex.name) &&
     (!q || ex.name.toLowerCase().includes(q) || ex.muscles.some(m => m.includes(q)))
-  ).sort((a, b) => a.name.localeCompare(b.name));
+  ).sort((a, b) => {
+    const atGym = isGymSession(lastParams);
+    return (gymEquipmentBias(b, atGym) - gymEquipmentBias(a, atGym)) || a.name.localeCompare(b.name);
+  });
 }
 
 function renderAddExerciseList() {
