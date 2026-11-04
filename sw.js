@@ -1,11 +1,12 @@
-const CACHE = "workout-app-v31";
+const CACHE = "workout-app-v32";
 const ASSETS = [
   "./",
   "./index.html",
   "./style.css",
   "./app.js",
   "./manifest.json",
-  "./data/exercises.json"
+  "./data/exercises.json",
+  "./data/recipes.json"
 ];
 
 self.addEventListener("install", e => {
