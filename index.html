@@ -6,11 +6,11 @@
 <title>Workout Builder</title>
 <link rel="manifest" href="manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Workouts">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<meta name="theme-color" content="#0a0f24">
-<link rel="stylesheet" href="style.css?v=21">
+<meta name="theme-color" content="#f3f4f8">
+<link rel="stylesheet" href="style.css?v=22">
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js" defer></script>
 </head>
 <body>
@@ -162,13 +162,19 @@
   </main>
 
   <main id="workout-screen" class="screen" aria-label="Your workout">
-    <div class="workout-header">
-      <button id="back-btn" class="icon-btn" aria-label="Back to build">←</button>
-      <h2 id="workout-title">Your Workout</h2>
-      <button id="regen-btn" class="icon-btn" aria-label="Regenerate workout">⟳</button>
+    <div class="wo-topbar">
+      <button id="back-btn" class="wo-icon-btn" aria-label="Back to build">‹</button>
+      <button type="button" id="wo-plan-pill" class="wo-pill" aria-label="Change workout settings"><span id="wo-plan-pill-text">Your Workout</span><span aria-hidden="true">›</span></button>
+      <button id="regen-btn" class="wo-icon-btn" aria-label="Regenerate workout">⟳</button>
     </div>
+    <h2 id="workout-title" class="wo-title">Your Workout</h2>
+    <div id="workout-sub" class="wo-sub"></div>
+    <div id="workout-muscles" class="wo-muscle-row"></div>
     <div id="workout-list"></div>
+    <button type="button" id="wo-add-exercise" class="wo-add-row"><span class="wo-add-icon" aria-hidden="true">+</span>Add an exercise</button>
     <button id="save-btn" class="primary-btn secondary">Save Workout</button>
+    <div class="wo-fab-spacer" aria-hidden="true"></div>
+    <button type="button" id="wo-start-btn" class="wo-fab"><span class="wo-fab-dot" aria-hidden="true"></span><span id="wo-start-text">Start Workout</span></button>
   </main>
 
   <main id="plan-screen" class="screen" aria-label="Your plan">
@@ -304,6 +310,20 @@
 
 
   <!-- Quick Add ingredient search & meal builder modal -->
+  <div id="addex-modal" class="quickadd-modal" hidden role="dialog" aria-modal="true" aria-label="Add an exercise">
+    <div class="quickadd-card">
+      <div class="qa-header">
+        <h2>Add an Exercise</h2>
+        <button type="button" id="addex-close-btn" class="icon-btn" aria-label="Close">✕</button>
+      </div>
+      <div class="qa-search-wrap">
+        <span class="qa-search-icon" aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/></svg></span>
+        <input type="text" id="addex-search" placeholder="Search exercise or muscle" autocomplete="off">
+      </div>
+      <div id="addex-list" class="addex-list"></div>
+    </div>
+  </div>
+
   <div id="quickadd-modal" class="quickadd-modal" hidden role="dialog" aria-modal="true" aria-label="Quick add ingredients">
     <div class="quickadd-card">
 
@@ -393,6 +413,6 @@
   </nav>
 
 </div>
-<script src="app.js?v=21"></script>
+<script src="app.js?v=22"></script>
 </body>
 </html>
