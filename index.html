@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Workouts">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <meta name="theme-color" content="#f3f4f8">
-<link rel="stylesheet" href="style.css?v=22">
+<link rel="stylesheet" href="style.css?v=23">
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js" defer></script>
 </head>
 <body>
@@ -41,6 +41,15 @@
       <span class="dash-card-text">
         <span class="dash-card-title">Build a Plan</span>
         <span class="dash-card-sub">Multi-week programs with smart splits</span>
+      </span>
+      <span class="dash-card-arrow" aria-hidden="true">›</span>
+    </button>
+
+    <button type="button" class="dash-card" data-goto="recovery-screen">
+      <span class="dash-card-icon" aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 0 0-7.1 7.1L12 21.5l8.8-8.8a5 5 0 0 0 0-7.1z"/><path d="M3.5 12h4l1.5-3 3 6 1.5-3h7"/></svg></span>
+      <span class="dash-card-text">
+        <span class="dash-card-title">Recovery</span>
+        <span class="dash-card-sub" id="home-recovery-sub">Finish a workout to track recovery</span>
       </span>
       <span class="dash-card-arrow" aria-hidden="true">›</span>
     </button>
@@ -172,6 +181,7 @@
     <div id="workout-muscles" class="wo-muscle-row"></div>
     <div id="workout-list"></div>
     <button type="button" id="wo-add-exercise" class="wo-add-row"><span class="wo-add-icon" aria-hidden="true">+</span>Add an exercise</button>
+    <button type="button" id="finish-btn" class="primary-btn" hidden>Finish Workout</button>
     <button id="save-btn" class="primary-btn secondary">Save Workout</button>
     <div class="wo-fab-spacer" aria-hidden="true"></div>
     <button type="button" id="wo-start-btn" class="wo-fab"><span class="wo-fab-dot" aria-hidden="true"></span><span id="wo-start-text">Start Workout</span></button>
@@ -186,6 +196,20 @@
     <div id="plan-week-tabs" class="week-tabs" role="tablist" aria-label="Plan weeks"></div>
     <div id="plan-day-list"></div>
     <button id="save-plan-btn" class="primary-btn secondary">Save Plan</button>
+  </main>
+
+  <!-- ============ RECOVERY ============ -->
+  <main id="recovery-screen" class="screen" aria-label="Recovery">
+    <section class="rec-stats">
+      <div class="rec-stat"><div class="rec-stat-num" id="rec-days">–</div><div class="rec-stat-label" id="rec-days-label">Days since your last workout</div></div>
+      <div class="rec-stat"><div class="rec-stat-num" id="rec-fresh">0</div><div class="rec-stat-label" id="rec-fresh-label">Fresh muscle groups</div></div>
+    </section>
+    <section class="rec-figures card" id="rec-figures" aria-label="Muscle recovery map"></section>
+    <div class="rec-legend"><span><i class="rec-dot sore"></i>Needs rest</span><span><i class="rec-dot recovering"></i>Recovering</span><span><i class="rec-dot fresh"></i>Fresh</span></div>
+    <h2 class="section-heading">Muscles trained this week</h2>
+    <section class="card" id="rec-muscle-list"></section>
+    <h2 class="section-heading">Workout History</h2>
+    <div id="rec-history-list"></div>
   </main>
 
   <!-- ============ NUTRITION ============ -->
@@ -408,11 +432,12 @@
   <nav class="tabbar" aria-label="Main navigation">
     <button class="tab-btn active" data-tab="home-screen" aria-label="Home"><span aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11.5 12 4l8 7.5"/><path d="M6 10v9a1 1 0 0 0 1 1h4v-6h2v6h4a1 1 0 0 0 1-1v-9"/></svg></span><span>Home</span></button>
     <button class="tab-btn" data-tab="setup-screen" aria-label="Build"><span aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 7v10M4 9v6M17.5 7v10M20 9v6M8.5 12h7"/></svg></span><span>Build</span></button>
+    <button class="tab-btn" data-tab="recovery-screen" aria-label="Recovery"><span aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 0 0-7.1 7.1L12 21.5l8.8-8.8a5 5 0 0 0 0-7.1z"/><path d="M3.5 12h4l1.5-3 3 6 1.5-3h7"/></svg></span><span>Recovery</span></button>
     <button class="tab-btn" data-tab="nutrition-screen" aria-label="Nutrition"><span aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7c-3.5-2-7.5 0-7.5 5 0 5 3.8 9.5 7 9.5s7.5-4.5 7.5-9.5c0-5.1-4-7-7-5z"/><path d="M12 7c0-2 1-4 3-5"/></svg></span><span>Food</span></button>
     <button class="tab-btn" data-tab="saved-screen" aria-label="Saved"><span aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.5 6.6L12 17l-5.9 3.5 1.5-6.6-5-4.6 6.6-.6L12 2.5z"/></svg></span><span>Saved</span></button>
   </nav>
 
 </div>
-<script src="app.js?v=22"></script>
+<script src="app.js?v=23"></script>
 </body>
 </html>
