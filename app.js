@@ -1662,7 +1662,7 @@ document.querySelectorAll(".action-tile, .dash-card, .action-tile-mini").forEach
 
 // override showTab to also refresh home stats + update topbar title
 const titleByScreen = {
-  "home-screen": "Workout Builder",
+  "home-screen": "Workout App",
   "setup-screen": "Build",
   "workout-screen": "Your Workout",
   "plan-screen": "Your Plan",
