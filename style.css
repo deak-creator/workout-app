@@ -1409,3 +1409,34 @@ html, body { background: radial-gradient(ellipse at top, #eef0f5 0%, #f3f4f8 60%
 .exd-hist-date { font-weight: 800; color: #0f172a; font-size: 14px; }
 .exd-hist-rel { color: #94a3b8; font-size: 13px; font-weight: 600; }
 .exd-hist-set { display: grid; grid-template-columns: 26px 1fr 1fr; gap: 8px; font-size: 14px; color: #334155; padding: 4px 0; border-top: 1px solid #f1f3f7; }
+
+/* ============================================================
+   COMPLETION INDICATORS + HOME SAVED SHORTCUT (v27)
+   ============================================================ */
+.exercise-card.complete { background: #f0fdf4 !important; border-color: #86efac; box-shadow: inset 4px 0 0 #22c55e, 0 1px 2px rgba(15,23,42,.05) !important; }
+.exercise-card.complete .name { color: #166534; }
+.ex-check.partial { border-color: #f59e0b; background: #fffbeb; color: #f59e0b; }
+.exercise-card.partial .log-badge { color: #b45309; }
+
+.complete-banner { display: flex; align-items: center; gap: 12px; background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; border-radius: 18px; padding: 14px 16px; margin: 8px 0 12px; box-shadow: 0 10px 24px -14px rgba(22,163,74,.9); }
+.complete-banner[hidden] { display: none; }
+.complete-banner-icon { width: 36px; height: 36px; flex-shrink: 0; border-radius: 50%; background: rgba(255,255,255,.25); display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; }
+.complete-banner-text { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.complete-banner-text strong { font-size: 17px; }
+
+.day-pill.done { background: #dcfce7; border-color: #86efac; color: #166534; }
+.day-pill.done.active { background: #16a34a; border-color: #16a34a; color: #fff; }
+.day-pill.done.active .pill-check { background: #fff; color: #16a34a; }
+.week-tab.done:not(.active) { background: #dcfce7 !important; color: #166534 !important; }
+
+.home-saved-list { display: flex; flex-direction: column; gap: 8px; margin: -4px 0 14px; }
+.home-saved-list:empty { display: none; }
+.home-saved-item { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: #ffffff; border: 1px solid #e4e7ee; border-radius: 16px; padding: 12px 14px; font-family: inherit; cursor: pointer; }
+.home-saved-item:active { transform: scale(0.98); }
+.home-saved-kind { flex-shrink: 0; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #ff2d55; background: #fff1f4; border-radius: 8px; padding: 4px 8px; }
+.home-saved-text { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.home-saved-title { font-size: 15px; font-weight: 800; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.home-saved-prog { font-size: 13px; font-weight: 600; color: #64748b; margin-top: 1px; }
+.home-saved-item.complete .home-saved-prog, .saved-item.complete .saved-prog { color: #16a34a; }
+.home-saved-item.complete .home-saved-kind { color: #16a34a; background: #dcfce7; }
+.exercise-card.partial { background: #ffffff !important; border-color: #fde68a; }
