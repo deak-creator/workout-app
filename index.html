@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Workout App">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <meta name="theme-color" content="#f3f4f8">
-<link rel="stylesheet" href="style.css?v=31">
+<link rel="stylesheet" href="style.css?v=32">
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js" defer></script>
 </head>
 <body>
@@ -275,6 +275,8 @@
     <button type="button" id="quickadd-btn" class="primary-btn"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/></svg> Quick Add Ingredient</button>
     <button type="button" id="scan-btn" class="primary-btn secondary"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8a2 2 0 0 1 2-2h1.5l1-2h7l1 2H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8z"/><circle cx="12" cy="13" r="3.5"/></svg> Scan Barcode</button>
 
+    <button type="button" id="recipes-btn" class="primary-btn secondary"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M9 8h7M9 12h5"/></svg> Recipe Index</button>
+
     <form id="manual-barcode-form" class="manual-barcode">
       <input type="text" id="manual-barcode-input" inputmode="numeric" placeholder="Or enter barcode number" aria-label="Enter barcode number manually">
       <button type="submit" class="icon-btn" aria-label="Look up barcode">→</button>
@@ -440,6 +442,20 @@
     </div>
   </div>
 
+  <main id="recipes-screen" class="screen" aria-label="Recipes">
+    <div id="recipes-list-view">
+      <button type="button" id="recipes-back-btn" class="saved-folder-back">‹ Food</button>
+      <div class="qa-search-wrap recipes-search-wrap">
+        <span class="qa-search-icon" aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/></svg></span>
+        <input type="search" id="recipes-search" placeholder="Search recipes or ingredients" autocomplete="off" aria-label="Search recipes">
+      </div>
+      <div id="recipe-filters" class="recipe-filters" role="tablist" aria-label="Recipe filters"></div>
+      <div id="recipes-count" class="recipes-count"></div>
+      <div id="recipes-list" class="recipes-list"></div>
+    </div>
+    <div id="recipe-detail" class="recipe-detail" hidden></div>
+  </main>
+
   <main id="saved-screen" class="screen" aria-label="Saved items">
     <div class="workout-header">
       <h2>Saved</h2>
@@ -473,6 +489,6 @@
   </nav>
 
 </div>
-<script src="app.js?v=31"></script>
+<script src="app.js?v=32"></script>
 </body>
 </html>
