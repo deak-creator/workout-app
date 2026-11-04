@@ -449,18 +449,194 @@ function findSwapCandidate(current, equipmentSet, maxDiff, excludeNames) {
 }
 
 // ============================================================
+// MUSCLE BODY DIAGRAM — small front/back figure with worked muscles highlighted
+// (used for exercise thumbnails + muscle tiles; reused by the Recovery map)
+// ============================================================
+const BODY_REGIONS = {
+  front: [
+    ["shoulders", '<ellipse cx="31" cy="47" rx="8.5" ry="7"/><ellipse cx="69" cy="47" rx="8.5" ry="7"/>'],
+    ["chest", '<path d="M38 43h11v19c-5 1-9 0-12-3l-1-9c0-4 0-6 2-7z"/><path d="M62 43H51v19c5 1 9 0 12-3l1-9c0-4 0-6-2-7z"/>'],
+    ["biceps", '<ellipse cx="25" cy="65" rx="5.2" ry="11"/><ellipse cx="75" cy="65" rx="5.2" ry="11"/>'],
+    ["forearms", '<ellipse cx="21" cy="89" rx="4.3" ry="12"/><ellipse cx="79" cy="89" rx="4.3" ry="12"/>'],
+    ["core", '<rect x="42" y="64" width="16" height="34" rx="5"/>'],
+    ["obliques", '<rect x="35.5" y="65" width="5.5" height="29" rx="2.7"/><rect x="59" y="65" width="5.5" height="29" rx="2.7"/>'],
+    ["hip flexors", '<path d="M36 97l7 4-2 9-6-6z"/><path d="M64 97l-7 4 2 9 6-6z"/>'],
+    ["quads", '<ellipse cx="41" cy="129" rx="7.5" ry="20"/><ellipse cx="59" cy="129" rx="7.5" ry="20"/>'],
+    ["inner thighs", '<ellipse cx="47.6" cy="122" rx="2.2" ry="12"/><ellipse cx="52.4" cy="122" rx="2.2" ry="12"/>'],
+    ["calves", '<ellipse cx="41" cy="171" rx="5" ry="15"/><ellipse cx="59" cy="171" rx="5" ry="15"/>']
+  ],
+  back: [
+    ["shoulders", '<ellipse cx="31" cy="47" rx="8.5" ry="7"/><ellipse cx="69" cy="47" rx="8.5" ry="7"/>'],
+    ["back", '<path d="M38 41h24l2 14-5 25H41l-5-25z"/>'],
+    ["lower back", '<rect x="42" y="81" width="16" height="16" rx="4"/>'],
+    ["triceps", '<ellipse cx="25" cy="65" rx="5.2" ry="11"/><ellipse cx="75" cy="65" rx="5.2" ry="11"/>'],
+    ["forearms", '<ellipse cx="21" cy="89" rx="4.3" ry="12"/><ellipse cx="79" cy="89" rx="4.3" ry="12"/>'],
+    ["glutes", '<ellipse cx="43" cy="107" rx="8" ry="8.5"/><ellipse cx="57" cy="107" rx="8" ry="8.5"/>'],
+    ["hamstrings", '<ellipse cx="42" cy="135" rx="7" ry="17"/><ellipse cx="58" cy="135" rx="7" ry="17"/>'],
+    ["calves", '<ellipse cx="42" cy="171" rx="5.5" ry="15"/><ellipse cx="58" cy="171" rx="5.5" ry="15"/>']
+  ]
+};
+// exercise-data muscle names -> diagram regions
+const MUSCLE_ALIASES = { spine: ["lower back"], hips: ["glutes", "hip flexors"] };
+const BACK_VIEW_MUSCLES = new Set(["back", "lower back", "triceps", "glutes", "hamstrings"]);
+const ALL_BODY_MUSCLES = [...new Set([...BODY_REGIONS.front, ...BODY_REGIONS.back].map(r => r[0]))];
+const UPPER_BODY_MUSCLES = new Set(["shoulders", "chest", "biceps", "triceps", "forearms", "core", "obliques", "back", "lower back"]);
+// zoom thumbnails onto the half of the body being worked (Fitbod-style close-ups)
+const BODY_VIEWBOX = { full: "0 0 100 192", upper: "6 28 88 84", lower: "16 90 68 102" };
+
+function bodyCropFor(regions) {
+  if (!regions.size || regions.size >= ALL_BODY_MUSCLES.length) return "full";
+  const list = [...regions];
+  if (list.every(r => UPPER_BODY_MUSCLES.has(r))) return "upper";
+  if (list.every(r => !UPPER_BODY_MUSCLES.has(r))) return "lower";
+  return "full";
+}
+
+function bodyRegionsFor(muscles) {
+  const out = new Set();
+  (muscles || []).forEach(m => {
+    if (m === "full body" || m === "cardio") ALL_BODY_MUSCLES.forEach(x => out.add(x));
+    else (MUSCLE_ALIASES[m] || [m]).forEach(x => out.add(x));
+  });
+  return out;
+}
+
+function bodyViewFor(regions) {
+  let back = 0, front = 0;
+  regions.forEach(r => { if (BACK_VIEW_MUSCLES.has(r)) back++; else if (r !== "shoulders" && r !== "forearms" && r !== "calves") front++; });
+  return back > front ? "back" : "front";
+}
+
+// levels: optional { muscle: 0..1 } to shade by intensity instead of on/off
+function bodySvg(muscles, opts = {}) {
+  const regions = bodyRegionsFor(muscles);
+  const view = opts.view || bodyViewFor(regions);
+  const parts = BODY_REGIONS[view].map(([name, shapes]) => {
+    const level = opts.levels ? opts.levels[name] : (regions.has(name) ? 1 : 0);
+    const style = level > 0 ? ` style="opacity:${(0.35 + 0.65 * level).toFixed(2)}"` : "";
+    return `<g class="bm ${level > 0 ? "bm-on" : ""}" data-muscle="${name}"${style}>${shapes}</g>`;
+  }).join("");
+  const crop = opts.crop === false ? "full" : bodyCropFor(regions);
+  return `<svg class="body-svg${opts.className ? " " + opts.className : ""}" viewBox="${BODY_VIEWBOX[crop]}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+    <g class="bm-base"><circle cx="50" cy="17" r="10.5"/><rect x="45" y="27" width="10" height="9" rx="3"/>
+    <path d="M36 38h28c6 0 9 3 9 8l-2 54H29l-2-54c0-5 3-8 9-8z"/>
+    <circle cx="19" cy="104" r="4"/><circle cx="81" cy="104" r="4"/><ellipse cx="41" cy="188" rx="5.5" ry="3"/><ellipse cx="59" cy="188" rx="5.5" ry="3"/></g>
+    ${parts}</svg>`;
+}
+
+function titleCase(str) {
+  return str.replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// top muscles worked (main exercises first), e.g. ["back", "biceps", "glutes"]
+function workoutTopMuscles(blocks, n = 4) {
+  const main = blocks.filter(b => !/warm|cool/i.test(b.section)).flatMap(b => b.items);
+  const items = main.length ? main : blocks.flatMap(b => b.items);
+  const counts = {};
+  items.forEach(ex => (ex.muscles || []).forEach(m => { if (m !== "cardio") counts[m] = (counts[m] || 0) + 1; }));
+  return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, n).map(([m, c]) => ({ muscle: m, count: c }));
+}
+
+// ============================================================
 // RENDERING — quick workout
 // ============================================================
 function renderWorkout(workout) {
   currentWorkout = workout;
   const titleMap = { strength: "Strength", cardio: "Cardio", fatloss: "Fat Loss", mobility: "Mobility", general: "General Fitness" };
+  const top = workoutTopMuscles(workout.blocks);
+  const allItems = workout.blocks.flatMap(b => b.items);
+
+  document.getElementById("wo-plan-pill-text").textContent = `${titleMap[workout.goal]} · ${workout.duration} min`;
   document.getElementById("workout-title").textContent =
-    `${titleMap[workout.goal]} · ${workout.duration} min`;
+    top.length ? top.map(t => titleCase(t.muscle)).join(", ") : titleMap[workout.goal];
+  document.getElementById("workout-sub").textContent =
+    `${allItems.length} exercises · ${titleCase(workout.difficulty)}`;
+
+  const musclesEl = document.getElementById("workout-muscles");
+  musclesEl.innerHTML = top.map(t => `
+    <div class="wo-muscle-tile">
+      <div class="wo-muscle-figure">${bodySvg([t.muscle])}</div>
+      <span class="wo-muscle-badge">${t.count} ex</span>
+      <span class="wo-muscle-name">${titleCase(t.muscle)}</span>
+    </div>`).join("");
 
   const list = document.getElementById("workout-list");
   list.innerHTML = "";
   renderBlocksInto(list, workout.blocks, lastParams, () => renderWorkout(currentWorkout));
+  updateStartButton();
 }
+
+// floating Start Workout button: opens the next exercise that hasn't been logged yet
+function updateStartButton() {
+  const btn = document.getElementById("wo-start-btn");
+  const items = currentWorkout ? currentWorkout.blocks.flatMap(b => b.items) : [];
+  const logged = items.filter(exerciseIsLogged).length;
+  btn.hidden = !items.length || logged === items.length;
+  document.getElementById("wo-start-text").textContent = logged ? "Next Exercise" : "Start Workout";
+}
+
+document.getElementById("wo-start-btn").addEventListener("click", () => {
+  const next = document.querySelector("#workout-list .exercise-card:not(.logged)");
+  if (!next) return;
+  const panel = next.parentElement.querySelector(".exercise-log-panel");
+  if (panel.hidden) next.click();
+  next.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+document.getElementById("wo-plan-pill").addEventListener("click", () => showTab("setup-screen"));
+
+// ---------- add an exercise (quick workout) ----------
+function addExerciseCandidates(query) {
+  const equipment = lastParams.equipment instanceof Set ? lastParams.equipment : new Set(lastParams.equipment);
+  const maxDiff = DIFF_RANK[lastParams.difficulty];
+  const inWorkout = new Set(currentWorkout.blocks.flatMap(b => b.items).map(i => i.name));
+  const q = query.trim().toLowerCase();
+  return EXERCISES.filter(ex =>
+    equipment.has(ex.equipment) && DIFF_RANK[ex.difficulty] <= maxDiff && !inWorkout.has(ex.name) &&
+    (!q || ex.name.toLowerCase().includes(q) || ex.muscles.some(m => m.includes(q)))
+  ).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function renderAddExerciseList() {
+  const listEl = document.getElementById("addex-list");
+  const results = addExerciseCandidates(document.getElementById("addex-search").value);
+  if (!results.length) {
+    listEl.innerHTML = `<div class="empty-state">No matching exercises for your equipment.</div>`;
+    return;
+  }
+  listEl.innerHTML = "";
+  results.forEach(ex => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "addex-item";
+    btn.innerHTML = `<span class="ex-thumb">${bodySvg(ex.muscles)}</span>
+      <span class="addex-text"><span class="addex-name">${ex.name}</span><span class="addex-meta">${ex.muscles.map(titleCase).join(", ")} · ${ex.equipment}</span></span>
+      <span class="addex-plus" aria-hidden="true">+</span>`;
+    btn.addEventListener("click", () => addExerciseToWorkout(ex));
+    listEl.appendChild(btn);
+  });
+}
+
+function addExerciseToWorkout(ex) {
+  const blocks = currentWorkout.blocks;
+  const target = blocks.find(b => !/warm|cool/i.test(b.section)) || blocks[blocks.length - 1];
+  const sample = target.items.find(i => i._seconds) || {};
+  const seconds = sample._seconds || 40;
+  const repStyle = (lastParams.promptBias || parseGoalPrompt(lastParams.goalPrompt || "")).repStyle;
+  target.items.push({ ...ex, durationLabel: formatSetLabel(ex, seconds, repStyle), _seconds: seconds, _role: "main", _focus: null });
+  document.getElementById("addex-modal").hidden = true;
+  renderWorkout(currentWorkout);
+}
+
+document.getElementById("wo-add-exercise").addEventListener("click", () => {
+  if (!currentWorkout) return;
+  document.getElementById("addex-search").value = "";
+  renderAddExerciseList();
+  document.getElementById("addex-modal").hidden = false;
+});
+document.getElementById("addex-search").addEventListener("input", renderAddExerciseList);
+document.getElementById("addex-close-btn").addEventListener("click", () => {
+  document.getElementById("addex-modal").hidden = true;
+});
 
 function renderBlocksInto(container, blocks, params, onChange) {
   let counter = 1;
@@ -469,8 +645,8 @@ function renderBlocksInto(container, blocks, params, onChange) {
 
   blocks.forEach(block => {
     const h = document.createElement("div");
-    h.className = "card";
-    h.innerHTML = `<h2>${block.section}</h2>`;
+    h.className = "wo-block";
+    h.innerHTML = `<div class="wo-section">${block.section}</div>`;
     block.items.forEach((ex, idx) => {
       const wrap = document.createElement("div");
       wrap.className = "exercise-card-wrap";
@@ -478,14 +654,13 @@ function renderBlocksInto(container, blocks, params, onChange) {
       const row = document.createElement("div");
       row.className = "exercise-card" + (exerciseIsLogged(ex) ? " logged" : "");
       row.innerHTML = `
-        <div class="num">${ex._done ? "✓" : counter}</div>
+        <div class="ex-thumb">${bodySvg(ex.muscles)}${exerciseIsLogged(ex) ? '<span class="ex-done">✓</span>' : ""}</div>
         <div class="info">
           <div class="name">${ex.name}</div>
-          <div class="meta">${ex.muscles.join(", ")} · ${ex.equipment}</div>
+          <div class="meta">${exercisePlanSummary(ex)}</div>
           ${exerciseIsLogged(ex) ? `<div class="log-badge">${exerciseSetSummary(ex)}</div>` : ""}
         </div>
-        <div class="dur">${ex.durationLabel}</div>
-        <button type="button" class="swap-btn" title="Swap exercise">⇄</button>
+        <button type="button" class="swap-btn" title="Swap exercise" aria-label="Swap ${ex.name}">⇄</button>
       `;
       counter++;
       row.querySelector(".swap-btn").addEventListener("click", e => {
@@ -525,9 +700,22 @@ function renderBlocksInto(container, blocks, params, onChange) {
 function exerciseIsLogged(ex) {
   return !!(ex._log && ex._log.sets && ex._log.sets.some(s => s.done));
 }
+// e.g. "3 sets • 10-12 reps" (strength) or "45s • Dumbbells" (timed)
+function exercisePlanSummary(ex) {
+  const sets = ex._log ? ex._log.sets.length : defaultLog().sets.length;
+  return ex.type === "strength"
+    ? `${sets} sets • ${ex.durationLabel}`
+    : `${ex.durationLabel} • ${titleCase(ex.equipment)}`;
+}
+// e.g. "3 sets • 10 reps • 20 kg" from what was actually logged
 function exerciseSetSummary(ex) {
-  const done = ex._log.sets.filter(s => s.done).length;
-  return `${done}/${ex._log.sets.length} sets logged`;
+  const done = ex._log.sets.filter(s => s.done);
+  const parts = [`${done.length}/${ex._log.sets.length} sets done`];
+  const reps = done.map(s => parseFloat(s.reps)).filter(n => n > 0);
+  const weights = done.map(s => parseFloat(s.weight)).filter(n => n > 0);
+  if (reps.length) parts.push(`${Math.max(...reps)} reps`);
+  if (weights.length) parts.push(`${Math.max(...weights)} kg`);
+  return parts.join(" • ");
 }
 function defaultLog() {
   return { sets: [{ reps: "", weight: "", done: false }, { reps: "", weight: "", done: false }, { reps: "", weight: "", done: false }], note: "", restSeconds: 90 };
@@ -903,6 +1091,7 @@ showTab = function (id) {
   _origShowTab(id);
   const titleEl = document.getElementById("topbar-title");
   if (titleEl && titleByScreen[id]) titleEl.textContent = titleByScreen[id];
+  document.querySelector(".topbar").hidden = id === "workout-screen";
   if (id === "home-screen") updateHomeStats();
   if (id === "nutrition-screen") renderFoodLog();
   // sync bottom tabbar highlight for screens not directly in tabbar (workout/plan detail views)
