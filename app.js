@@ -753,7 +753,20 @@ function renderWorkout(workout) {
   const list = document.getElementById("workout-list");
   list.innerHTML = "";
   renderBlocksInto(list, workout.blocks, lastParams, () => renderWorkout(currentWorkout));
+  renderCompleteBanner(document.getElementById("wo-complete-banner"), allItems, workout._historyId, "Workout");
   updateStartButton();
+  persistSaved(workout);
+}
+
+// green "complete" banner for a workout or plan day once every exercise is logged
+function renderCompleteBanner(el, items, finished, noun) {
+  if (!el) return;
+  const done = items.length > 0 && items.every(exerciseIsLogged);
+  el.hidden = !done && !finished;
+  if (el.hidden) { el.innerHTML = ""; return; }
+  el.innerHTML = `<span class="complete-banner-icon">✓</span>
+    <span class="complete-banner-text"><strong>${noun} complete!</strong>
+    <span>${finished ? "Saved to your workout history." : `Tap Finish ${noun === "Workout" ? "Workout" : noun} to save it to your history.`}</span></span>`;
 }
 
 // floating Start Workout button: opens the next exercise that hasn't been logged yet
@@ -782,6 +795,7 @@ function finishCurrentWorkout() {
   });
   if (!entry) return;
   updateStartButton();
+  persistSaved(currentWorkout);
   showTab("recovery-screen");
 }
 document.getElementById("finish-btn").addEventListener("click", finishCurrentWorkout);
@@ -865,7 +879,8 @@ function renderBlocksInto(container, blocks, params, onChange) {
 
       const row = document.createElement("div");
       const logged = exerciseIsLogged(ex);
-      row.className = "exercise-card" + (logged ? " logged" : "");
+      const complete = exerciseIsComplete(ex);
+      row.className = "exercise-card" + (logged ? " logged" : "") + (complete ? " complete" : logged ? " partial" : "");
       row.innerHTML = `
         <div class="ex-thumb">${bodySvg(ex.muscles)}</div>
         <div class="info">
@@ -875,7 +890,7 @@ function renderBlocksInto(container, blocks, params, onChange) {
           ${logged ? `<div class="log-badge">${exerciseSetSummary(ex)}</div>` : ""}
         </div>
         <div class="ex-side">
-          <span class="ex-check${logged ? " done" : ""}" aria-label="${logged ? "Logged" : "Not logged yet"}">✓</span>
+          <span class="ex-check${complete ? " done" : logged ? " partial" : ""}" aria-label="${complete ? "Complete" : logged ? "Partly done" : "Not logged yet"}">✓</span>
           <button type="button" class="swap-btn" title="Swap exercise" aria-label="Swap ${ex.name}">⇄</button>
         </div>
       `;
@@ -904,6 +919,10 @@ function renderBlocksInto(container, blocks, params, onChange) {
 // ---------- per-exercise set logging ----------
 function exerciseIsLogged(ex) {
   return !!(ex._log && ex._log.sets && ex._log.sets.some(s => s.done));
+}
+// every set ticked (vs. only some)
+function exerciseIsComplete(ex) {
+  return exerciseIsLogged(ex) && ex._log.sets.every(s => s.done);
 }
 // e.g. "3 sets • 10-12 reps" (strength) or "45s • Dumbbells" (timed)
 function exercisePlanSummary(ex) {
@@ -1131,9 +1150,7 @@ document.querySelectorAll(".exd-tab").forEach(b => b.addEventListener("click", (
 // ---------- save quick workout ----------
 document.getElementById("save-btn").addEventListener("click", () => {
   if (!currentWorkout) return;
-  const saved = JSON.parse(localStorage.getItem("savedWorkouts") || "[]");
-  saved.unshift({ kind: "workout", data: currentWorkout });
-  localStorage.setItem("savedWorkouts", JSON.stringify(saved));
+  saveEntry("workout", currentWorkout);
   const btn = document.getElementById("save-btn");
   btn.textContent = "Saved ✓";
   setTimeout(() => { btn.textContent = "Save Workout"; }, 1500);
@@ -1151,7 +1168,7 @@ function renderPlan(plan) {
   tabsEl.innerHTML = "";
   plan.weeks.forEach((wk, i) => {
     const btn = document.createElement("button");
-    btn.className = "week-tab" + (i === activeWeekIndex ? " active" : "");
+    btn.className = "week-tab" + (i === activeWeekIndex ? " active" : "") + (weekIsDone(wk) ? " done" : "");
     btn.innerHTML = `${weekIsDone(wk) ? '<span class="pill-check">✓</span>' : ""}Week ${i + 1}`;
     btn.addEventListener("click", () => {
       activeWeekIndex = i;
@@ -1169,7 +1186,7 @@ function renderPlan(plan) {
   week.days.forEach((day, dayIdx) => {
     const pill = document.createElement("button");
     pill.type = "button";
-    pill.className = "day-pill" + (dayIdx === activePlanDayIndex ? " active" : "") + (day.isRest ? " rest" : "");
+    pill.className = "day-pill" + (dayIdx === activePlanDayIndex ? " active" : "") + (day.isRest ? " rest" : "") + (planDayIsDone(day) ? " done" : "");
     pill.innerHTML = `${planDayIsDone(day) ? '<span class="pill-check">✓</span>' : ""}Day ${dayIdx + 1}`;
     pill.addEventListener("click", () => {
       activePlanDayIndex = dayIdx;
@@ -1191,6 +1208,7 @@ function renderPlan(plan) {
         <div><div class="day-name">${dayName} · Rest Day</div><div class="day-focus">Recover today and come back stronger.</div></div>
         <div class="rest-icon">🌙</div>
       </div>`;
+    persistSaved(plan);
     return;
   }
   const allExercises = day.blocks.flatMap(b => b.items);
@@ -1201,6 +1219,10 @@ function renderPlan(plan) {
     <div class="plan-day-title">${day.focus}</div>
     <div class="plan-day-sub">${allExercises.length} Exercises · ${day.duration} min${loggedCount ? ` · ${loggedCount}/${allExercises.length} logged` : ""}</div>`;
   dayListEl.appendChild(head);
+  const banner = document.createElement("div");
+  banner.className = "complete-banner";
+  renderCompleteBanner(banner, allExercises, day._historyId, dayName);
+  if (!banner.hidden) dayListEl.appendChild(banner);
 
   const exContainer = document.createElement("div");
   exContainer.className = "day-exercises";
@@ -1219,10 +1241,11 @@ function renderPlan(plan) {
         goal: plan.goal,
         duration: day.duration
       });
-      if (entry) showTab("recovery-screen");
+      if (entry) { persistSaved(plan); showTab("recovery-screen"); }
     });
     dayListEl.appendChild(finishDay);
   }
+  persistSaved(plan);
 }
 
 // a plan day counts as done once it's been finished, or every exercise in it is logged
@@ -1242,13 +1265,116 @@ function firstOpenDayIndex(week) {
 
 document.getElementById("save-plan-btn").addEventListener("click", () => {
   if (!currentPlan) return;
-  const saved = JSON.parse(localStorage.getItem("savedWorkouts") || "[]");
-  saved.unshift({ kind: "plan", data: currentPlan });
-  localStorage.setItem("savedWorkouts", JSON.stringify(saved));
+  saveEntry("plan", currentPlan);
   const btn = document.getElementById("save-plan-btn");
   btn.textContent = "Saved ✓";
   setTimeout(() => { btn.textContent = "Save Plan"; }, 1500);
 });
+
+// ============================================================
+// SAVED WORKOUTS — storage, progress, and opening a saved item
+// ============================================================
+const SAVED_KEY = "savedWorkouts";
+const GOAL_TITLES = { strength: "Strength", cardio: "Cardio", fatloss: "Fat Loss", mobility: "Mobility", general: "General Fitness" };
+
+// every saved entry gets a stable id so logged progress can be written back to it
+function getSavedEntries() {
+  const list = JSON.parse(localStorage.getItem(SAVED_KEY) || "[]");
+  let changed = false;
+  list.forEach(e => {
+    if (!e.id) { e.id = `s${Date.now()}${Math.random().toString(36).slice(2, 7)}`; changed = true; }
+    if (e.data && e.data._savedId !== e.id) { e.data._savedId = e.id; changed = true; }
+  });
+  if (changed) setSavedEntries(list);
+  return list;
+}
+function setSavedEntries(list) {
+  localStorage.setItem(SAVED_KEY, JSON.stringify(list));
+}
+
+// Save (or re-save) a workout/plan. Returns the entry id.
+function saveEntry(kind, data) {
+  const list = getSavedEntries();
+  const i = data._savedId ? list.findIndex(e => e.id === data._savedId) : -1;
+  if (i >= 0) { list[i].data = data; setSavedEntries(list); return data._savedId; }
+  const id = `s${Date.now()}${Math.random().toString(36).slice(2, 7)}`;
+  data._savedId = id;
+  list.unshift({ id, kind, data, savedAt: new Date().toISOString() });
+  setSavedEntries(list);
+  return id;
+}
+
+// keep a saved workout/plan's ticks in sync after every change (so progress survives closing the app)
+function persistSaved(data) {
+  if (!data || !data._savedId) return;
+  const list = JSON.parse(localStorage.getItem(SAVED_KEY) || "[]");
+  const i = list.findIndex(e => e.id === data._savedId);
+  if (i < 0) { delete data._savedId; return; }
+  list[i].data = data;
+  setSavedEntries(list);
+}
+
+function savedEntryTitle(entry) {
+  const w = entry.data;
+  return entry.kind === "plan"
+    ? `${GOAL_TITLES[w.goal] || "Workout"} Plan · ${w.daysPerWeek}x/wk · ${w.weeksCount}wk`
+    : `${GOAL_TITLES[w.goal] || "Workout"} · ${w.duration} min`;
+}
+
+// { done, total, complete, text } for a saved workout or plan
+function savedEntryProgress(entry) {
+  const w = entry.data;
+  if (entry.kind === "plan") {
+    const days = w.weeks.flatMap(wk => wk.days).filter(d => !d.isRest);
+    const done = days.filter(planDayIsDone).length;
+    const complete = days.length > 0 && done === days.length;
+    return { done, total: days.length, complete, text: complete ? "Plan complete" : `${done}/${days.length} days done` };
+  }
+  const items = w.blocks.flatMap(b => b.items);
+  const done = items.filter(exerciseIsLogged).length;
+  const complete = !!w._historyId || (items.length > 0 && done === items.length);
+  return { done, total: items.length, complete, text: complete ? "Completed" : done ? `${done}/${items.length} exercises logged` : `${items.length} exercises` };
+}
+
+function openSavedEntry(entry) {
+  const w = entry.data;
+  w._savedId = entry.id;
+  if (entry.kind === "plan") {
+    currentPlan = w;
+    activeWeekIndex = Math.max(0, w.weeks.findIndex(wk => !weekIsDone(wk)));
+    activePlanDayIndex = null;
+    lastParams = { goal: w.goal, difficulty: w.difficulty, equipment: new Set(w.equipment), muscles: new Set() };
+    renderPlan(w);
+    showTab("plan-screen");
+  } else {
+    lastParams = { goal: w.goal, duration: w.duration, difficulty: w.difficulty, equipment: new Set(w.equipment), muscles: new Set() };
+    renderWorkout(w);
+    showTab("workout-screen");
+  }
+}
+
+function renderHomeSaved() {
+  const list = getSavedEntries();
+  const sub = document.getElementById("home-saved-sub");
+  if (sub) sub.textContent = list.length
+    ? `${list.length} saved · tap to see all`
+    : "Save a workout or plan to find it here";
+  const el = document.getElementById("home-saved-list");
+  if (!el) return;
+  el.innerHTML = "";
+  list.slice(0, 3).forEach(entry => {
+    const prog = savedEntryProgress(entry);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "home-saved-item" + (prog.complete ? " complete" : "");
+    btn.innerHTML = `
+      <span class="home-saved-kind">${entry.kind === "plan" ? "Plan" : "Workout"}</span>
+      <span class="home-saved-text"><span class="home-saved-title">${savedEntryTitle(entry)}</span><span class="home-saved-prog">${prog.complete ? "✓ " : ""}${prog.text} · ${new Date(entry.data.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</span></span>
+      <span class="dash-card-arrow" aria-hidden="true">›</span>`;
+    btn.addEventListener("click", () => openSavedEntry(entry));
+    el.appendChild(btn);
+  });
+}
 
 // ============================================================
 // RECOVERY SCREEN
@@ -1327,7 +1453,7 @@ function renderRecovery() {
 // SAVED LIST (workouts + plans)
 // ============================================================
 function renderSaved() {
-  const saved = JSON.parse(localStorage.getItem("savedWorkouts") || "[]");
+  const saved = getSavedEntries();
   const list = document.getElementById("saved-list");
   list.innerHTML = "";
   if (!saved.length) {
@@ -1335,47 +1461,23 @@ function renderSaved() {
     renderSavedMeals();
     return;
   }
-  const titleMap = { strength: "Strength", cardio: "Cardio", fatloss: "Fat Loss", mobility: "Mobility", general: "General Fitness" };
-  saved.forEach((entry, i) => {
+  saved.forEach(entry => {
     const w = entry.data;
+    const prog = savedEntryProgress(entry);
     const item = document.createElement("div");
-    item.className = "saved-item";
-    const date = new Date(w.createdAt);
-    if (entry.kind === "plan") {
-      item.innerHTML = `
-        <div>
-          <div class="title">${titleMap[w.goal]} Plan · ${w.daysPerWeek}x/wk · ${w.weeksCount}wk</div>
-          <div class="sub">${date.toLocaleDateString()} · ${w.difficulty}</div>
-        </div>
-        <button data-i="${i}">Delete</button>
-      `;
-      item.querySelector("div").addEventListener("click", () => {
-        currentPlan = w;
-        activeWeekIndex = 0;
-        activePlanDayIndex = null;
-        lastParams = { goal: w.goal, difficulty: w.difficulty, equipment: new Set(w.equipment), muscles: new Set() };
-        renderPlan(w);
-        showTab("plan-screen");
-      });
-    } else {
-      item.innerHTML = `
-        <div>
-          <div class="title">${titleMap[w.goal]} · ${w.duration} min</div>
-          <div class="sub">${date.toLocaleDateString()} · ${w.difficulty}</div>
-        </div>
-        <button data-i="${i}">Delete</button>
-      `;
-      item.querySelector("div").addEventListener("click", () => {
-        lastParams = { goal: w.goal, duration: w.duration, difficulty: w.difficulty, equipment: new Set(w.equipment), muscles: new Set() };
-        renderWorkout(w);
-        showTab("workout-screen");
-      });
-    }
+    item.className = "saved-item" + (prog.complete ? " complete" : "");
+    item.innerHTML = `
+      <div>
+        <div class="title">${savedEntryTitle(entry)}</div>
+        <div class="sub">${new Date(w.createdAt).toLocaleDateString()} · ${w.difficulty} · <span class="saved-prog">${prog.complete ? "✓ " : ""}${prog.text}</span></div>
+      </div>
+      <button type="button">Delete</button>
+    `;
+    item.querySelector("div").addEventListener("click", () => openSavedEntry(entry));
     item.querySelector("button").addEventListener("click", e => {
       e.stopPropagation();
-      const arr = JSON.parse(localStorage.getItem("savedWorkouts") || "[]");
-      arr.splice(i, 1);
-      localStorage.setItem("savedWorkouts", JSON.stringify(arr));
+      setSavedEntries(getSavedEntries().filter(x => x.id !== entry.id));
+      if (w === currentPlan || w === currentWorkout) delete w._savedId;
       renderSaved();
     });
     list.appendChild(item);
@@ -1457,7 +1559,7 @@ if ("serviceWorker" in navigator) {
 // HOME SCREEN
 // ============================================================
 function updateHomeStats() {
-  const savedWorkouts = JSON.parse(localStorage.getItem("savedWorkouts") || "[]");
+  const savedWorkouts = getSavedEntries();
   const todayLog = getFoodLogFor(todayKey());
   const totals = sumNutrients(todayLog);
   const targets = getNutritionTargets();
@@ -1475,8 +1577,7 @@ function updateHomeStats() {
 
   const calSubEl = document.getElementById("home-cal-sub");
   if (calSubEl) calSubEl.textContent = `${Math.round(totals.calories)} / ${targets.calories} kcal today`;
-  const savedSubEl = document.getElementById("home-saved-sub");
-  if (savedSubEl) savedSubEl.textContent = `${savedWorkouts.length} workout${savedWorkouts.length === 1 ? "" : "s"} saved`;
+  renderHomeSaved();
 
   const recSubEl = document.getElementById("home-recovery-sub");
   if (recSubEl) {
