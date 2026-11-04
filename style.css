@@ -1309,3 +1309,37 @@ html, body { background: radial-gradient(ellipse at top, #eef0f5 0%, #f3f4f8 60%
 .addex-meta { font-size: 12px; color: #64748b; margin-top: 2px; }
 .addex-plus { width: 30px; height: 30px; border-radius: 50%; background: #ff2d55; color: #fff; font-size: 20px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 #workout-screen > * { flex-shrink: 0; }
+
+/* ============================================================
+   RECOVERY SCREEN
+   ============================================================ */
+#recovery-screen > * { flex-shrink: 0; }
+.rec-stats { display: flex; gap: 12px; margin: 4px 0 14px; }
+.rec-stat { flex: 1; text-align: center; background: #ffffff; border-radius: 18px; padding: 16px 10px; box-shadow: 0 1px 2px rgba(15,23,42,.05), 0 8px 24px -12px rgba(15,23,42,.12); }
+.rec-stat-num { font-size: 40px; font-weight: 800; line-height: 1; color: #0f172a; letter-spacing: -0.02em; }
+.rec-stat-label { margin-top: 6px; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #64748b; }
+.rec-figures { display: flex; justify-content: space-around; gap: 8px; padding: 18px 10px 10px; }
+.rec-figure-wrap { flex: 1; max-width: 170px; display: flex; flex-direction: column; align-items: center; }
+.rec-figure { position: relative; width: 100%; aspect-ratio: 100 / 192; }
+.rec-figure .body-svg { width: 100%; height: 100%; }
+.rec-figure-label { margin-top: 6px; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #94a3b8; }
+.rec-badge { position: absolute; transform: translate(-50%, -50%); background: #ff2d55; color: #fff; font-size: 11px; font-weight: 800; border-radius: 999px; padding: 2px 6px; box-shadow: 0 3px 8px -3px rgba(255,45,85,.8); border: 1.5px solid #fff; white-space: nowrap; pointer-events: none; }
+.rec-legend { display: flex; justify-content: center; gap: 16px; font-size: 12px; font-weight: 600; color: #64748b; margin: -4px 0 6px; }
+.rec-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+.rec-dot.sore, .rec-bar-fill.sore { background: #ff2d55; }
+.rec-dot.recovering, .rec-bar-fill.recovering { background: #f59e0b; }
+.rec-dot.fresh, .rec-bar-fill.fresh { background: #22c55e; }
+.rec-muscle-row { padding: 10px 0; border-bottom: 1px solid #eef0f5; }
+.rec-muscle-row:last-child { border-bottom: none; }
+.rec-muscle-top { display: flex; justify-content: space-between; align-items: baseline; }
+.rec-muscle-name { font-size: 15px; font-weight: 800; color: #0f172a; }
+.rec-muscle-pct { font-size: 15px; font-weight: 800; }
+.rec-muscle-pct.sore { color: #e11d48; }
+.rec-muscle-pct.recovering { color: #d97706; }
+.rec-muscle-pct.fresh { color: #16a34a; }
+.rec-bar { height: 8px; border-radius: 999px; background: #eef0f5; margin: 6px 0 4px; overflow: hidden; }
+.rec-bar-fill { height: 100%; border-radius: 999px; transition: width .3s ease; }
+.rec-muscle-sub { font-size: 12px; color: #94a3b8; font-weight: 600; }
+.finish-day-btn { width: 100%; margin: 6px 0 4px; }
+#finish-btn[hidden] { display: none; }
+.tabbar .tab-btn { min-width: 0; }
