@@ -79,7 +79,10 @@ document.querySelector(".mode-toggle").addEventListener("click", e => {
 
 // ---------- tab navigation ----------
 document.querySelectorAll(".tab-btn").forEach(btn => {
-  btn.addEventListener("click", () => showTab(btn.dataset.tab));
+  btn.addEventListener("click", () => {
+    if (btn.dataset.tab === "saved-screen") savedFolder = null;
+    showTab(btn.dataset.tab);
+  });
 });
 function showTab(id) {
   document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
@@ -1450,15 +1453,44 @@ function renderRecovery() {
 }
 
 // ============================================================
-// SAVED LIST (workouts + plans)
+// SAVED LIST — two folders: workouts & plans / meals
 // ============================================================
+let savedFolder = null; // null = folder overview, "workouts" | "meals" = inside a folder
+const SAVED_FOLDER_TITLES = { workouts: "Workouts & Plans", meals: "Meals" };
+
+function savedCountText(n, emptyText) {
+  return n ? `${n} saved` : emptyText;
+}
+
 function renderSaved() {
   const saved = getSavedEntries();
+  const meals = qaGetSavedMeals();
+  const doneCount = saved.filter(e => savedEntryProgress(e).complete).length;
+  document.getElementById("saved-folder-workouts-sub").textContent =
+    savedCountText(saved.length, "No workouts saved yet") + (doneCount ? ` · ${doneCount} complete` : "");
+  document.getElementById("saved-folder-meals-sub").textContent = savedCountText(meals.length, "No meals saved yet");
+
+  const inFolder = savedFolder in SAVED_FOLDER_TITLES;
+  document.getElementById("saved-folders").hidden = inFolder;
+  document.getElementById("saved-folder-view").hidden = !inFolder;
+  document.getElementById("saved-folder-title").textContent = inFolder ? SAVED_FOLDER_TITLES[savedFolder] : "";
+  document.getElementById("saved-list").hidden = savedFolder !== "workouts";
+  document.getElementById("saved-meals-list").hidden = savedFolder !== "meals";
+
+  if (savedFolder === "workouts") renderSavedWorkouts(saved);
+  if (savedFolder === "meals") renderSavedMeals();
+}
+
+document.querySelectorAll(".saved-folder").forEach(btn => {
+  btn.addEventListener("click", () => { savedFolder = btn.dataset.folder; renderSaved(); window.scrollTo(0, 0); });
+});
+document.getElementById("saved-folder-back").addEventListener("click", () => { savedFolder = null; renderSaved(); });
+
+function renderSavedWorkouts(saved) {
   const list = document.getElementById("saved-list");
   list.innerHTML = "";
   if (!saved.length) {
     list.innerHTML = `<div class="empty-state">Nothing saved yet.<br>Build a workout or plan in the Build tab.</div>`;
-    renderSavedMeals();
     return;
   }
   saved.forEach(entry => {
@@ -1482,8 +1514,6 @@ function renderSaved() {
     });
     list.appendChild(item);
   });
-
-  renderSavedMeals();
 }
 
 function renderSavedMeals() {
@@ -1607,6 +1637,7 @@ function setMiniRing(key, value, target) {
 document.querySelectorAll(".action-tile, .dash-card, .action-tile-mini").forEach(tile => {
   tile.addEventListener("click", () => {
     const goto = tile.dataset.goto;
+    if (goto === "saved-screen") savedFolder = tile.dataset.folder || null;
     if (tile.dataset.presetmode && goto === "setup-screen") {
       const target = tile.dataset.presetmode;
       document.querySelectorAll(".mode-btn").forEach(b => {
