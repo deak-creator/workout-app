@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Workouts">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <meta name="theme-color" content="#f3f4f8">
-<link rel="stylesheet" href="style.css?v=25">
+<link rel="stylesheet" href="style.css?v=26">
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js" defer></script>
 </head>
 <body>
@@ -194,8 +194,25 @@
       <span class="icon-btn-spacer" aria-hidden="true"></span>
     </div>
     <div id="plan-week-tabs" class="week-tabs" role="tablist" aria-label="Plan weeks"></div>
+    <div id="plan-day-pills" class="day-pills" role="tablist" aria-label="Plan days"></div>
     <div id="plan-day-list"></div>
     <button id="save-plan-btn" class="primary-btn secondary">Save Plan</button>
+  </main>
+
+  <!-- ============ EXERCISE PAGE ============ -->
+  <main id="exercise-screen" class="screen" aria-label="Exercise">
+    <div class="exd-topbar">
+      <button type="button" id="exd-back-btn" class="wo-icon-btn" aria-label="Back to workout">‹</button>
+      <h2 id="exd-title" class="exd-title">Exercise</h2>
+      <span class="exd-spacer" aria-hidden="true"></span>
+    </div>
+    <div id="exd-hero" class="exd-hero"></div>
+    <div id="exd-muscles" class="exd-muscles"></div>
+    <div class="exd-tabs" role="tablist">
+      <button type="button" class="exd-tab" data-exd-tab="history" role="tab">History</button>
+      <button type="button" class="exd-tab active" data-exd-tab="log" role="tab">Log</button>
+    </div>
+    <div id="exd-body"></div>
   </main>
 
   <!-- ============ RECOVERY ============ -->
@@ -438,6 +455,6 @@
   </nav>
 
 </div>
-<script src="app.js?v=25"></script>
+<script src="app.js?v=26"></script>
 </body>
 </html>
