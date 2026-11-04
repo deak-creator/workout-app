@@ -142,7 +142,9 @@ document.getElementById("goal-prompt-input").addEventListener("input", e => {
 
 // ============================================================
 // DAY-TYPE ROTATION — each day in a plan is a different kind of workout
-// (Strength / Cardio / Fat Loss / Mobility), never a muscle-group split.
+// (Strength / Cardio / Fat Loss / Mobility). Strength days are then given a
+// muscle-group focus (Push / Pull / Legs / Upper / Lower) so one session sticks
+// to related muscles instead of hitting everything.
 // ============================================================
 const DAY_TYPE_LABELS = {
   strength: "Strength",
@@ -241,7 +243,66 @@ function buildBiasedRotation(daysPerWeek, promptBias) {
   return order;
 }
 
+// Muscle groups for strength-day splits, matched on an exercise's primary (first) muscle.
+const PUSH_MUSCLES = ["chest", "shoulders", "triceps"];
+const PULL_MUSCLES = ["back", "biceps", "lower back", "forearms"];
+const LEG_MUSCLES = ["quads", "hamstrings", "glutes", "hips", "inner thighs", "hip flexors", "calves"];
+const MUSCLE_SPLITS = {
+  push: { label: "Push Day", muscles: PUSH_MUSCLES },
+  pull: { label: "Pull Day", muscles: PULL_MUSCLES },
+  legs: { label: "Leg Day", muscles: LEG_MUSCLES },
+  upper: { label: "Upper Body", muscles: [...PUSH_MUSCLES, ...PULL_MUSCLES] },
+  lower: { label: "Lower Body", muscles: LEG_MUSCLES },
+  full: { label: "Full Body", muscles: null }
+};
+// How the week's strength days are split, by how many strength days there are.
+const SPLIT_ORDER_BY_COUNT = {
+  1: ["full"],
+  2: ["upper", "lower"],
+  3: ["push", "pull", "legs"],
+  4: ["upper", "lower", "upper", "lower"],
+  5: ["push", "pull", "legs", "upper", "lower"],
+  6: ["push", "pull", "legs", "push", "pull", "legs"]
+};
+
+// Strength and Fat Loss days both lift weights, so both get a muscle-group focus.
+function assignMuscleSplits(days) {
+  const liftingDays = days.filter(d => (d.dayGoal === "strength" || d.dayGoal === "fatloss") && !d.isRest);
+  const order = SPLIT_ORDER_BY_COUNT[Math.min(6, liftingDays.length)] || [];
+  liftingDays.forEach((day, i) => {
+    const split = MUSCLE_SPLITS[order[i] || "full"];
+    day.label = day.dayGoal === "fatloss" ? `Fat Loss · ${split.label}` : split.label;
+    day.muscleGroup = split.muscles;
+  });
+  return days;
+}
+
+// Strength picks inside the day's muscle group float to the top; others sink
+// (core and non-strength moves are neutral so warm-ups/finishers still work).
+// Fat Loss split day: alternate on-group weights with cardio/core so the label
+// ("Fat Loss · Pull Day") stays true without losing the circuit feel.
+function splitCircuitPicks(rankedPool, muscleGroup, count) {
+  const lifts = pickUnique(rankedPool.filter(ex => muscleSplitBias(ex, muscleGroup) > 0), Math.ceil(count / 2));
+  const conditioning = pickUnique(rankedPool.filter(ex => ex.type === "cardio" || ex.type === "core"), count - lifts.length);
+  const out = [];
+  for (let i = 0; out.length < lifts.length + conditioning.length; i++) {
+    if (lifts[i]) out.push(lifts[i]);
+    if (conditioning[i]) out.push(conditioning[i]);
+  }
+  return out.length ? out : pickUnique(rankedPool, count);
+}
+
+// inGroupBonus is lower on Fat Loss days so cardio still gets mixed into the circuit.
+function muscleSplitBias(ex, muscleGroup, inGroupBonus = 8) {
+  if (!muscleGroup || ex.type !== "strength" || !ex.muscles || !ex.muscles.length) return 0;
+  return muscleGroup.includes(ex.muscles[0]) ? inGroupBonus : -8;
+}
+
 function getSplitTemplate(daysPerWeek, promptBias) {
+  return assignMuscleSplits(getDayTypeTemplate(daysPerWeek, promptBias));
+}
+
+function getDayTypeTemplate(daysPerWeek, promptBias) {
   const bias = promptBias || parseGoalPrompt("");
   const hasBias = Object.values(bias.typeBias).some(v => v !== 0);
 
@@ -328,10 +389,13 @@ function generateWorkout(params, dayFocus) {
   const effectiveGoal = dayFocus ? dayFocus.dayGoal : goal;
 
   const typeWeights = goalTypeWeights(effectiveGoal, promptBias);
-  const atGym = isGymSession(params);
+  const atGym = isGymSession(params) && effectiveGoal !== "mobility";
+  const isCircuit = effectiveGoal === "fatloss" || effectiveGoal === "cardio";
+  const gymScale = isCircuit ? 0.5 : 1;
 
   function score(ex) {
-    let s = (typeWeights[ex.type] ?? 1) + gymEquipmentBias(ex, atGym);
+    let s = (typeWeights[ex.type] ?? 1) + gymEquipmentBias(ex, atGym) * gymScale
+      + muscleSplitBias(ex, dayFocus && dayFocus.muscleGroup, isCircuit ? 0 : 8);
     // nudge exercises toward any specific muscle groups called out in the prompt
     // (e.g. "focus on back" boosts back/pull exercises without filtering everything else out)
     if (promptBias.muscleFocus.length && ex.muscles) {
@@ -358,9 +422,12 @@ function generateWorkout(params, dayFocus) {
   const cooldownPool = EXERCISES.filter(ex => ex.type === "mobility" && equipment.has(ex.equipment));
 
   const mainExCount = Math.min(exPerBlock, mainPool.length || 1);
+  const splitGroup = dayFocus && dayFocus.muscleGroup;
   const mainExercises = effectiveGoal === "mobility"
     ? pickUnique(ranked, mainExCount)
-    : pickUnique(mainPool.length ? mainPool : ranked, mainExCount);
+    : (isCircuit && splitGroup)
+      ? splitCircuitPicks(mainPool, splitGroup, mainExCount)
+      : pickUnique(mainPool.length ? mainPool : ranked, mainExCount);
 
   const perExerciseSeconds = mainExercises.length
     ? Math.max(20, Math.floor((mainTime * 60) / (mainExercises.length * rounds)))
