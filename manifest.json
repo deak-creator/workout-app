@@ -1,6 +1,6 @@
 {
-  "name": "Workout Builder",
-  "short_name": "Workouts",
+  "name": "Workout App",
+  "short_name": "Workout App",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f3f4f8",
