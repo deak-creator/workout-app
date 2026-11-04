@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Workouts">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <meta name="theme-color" content="#f3f4f8">
-<link rel="stylesheet" href="style.css?v=26">
+<link rel="stylesheet" href="style.css?v=27">
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js" defer></script>
 </head>
 <body>
@@ -26,6 +26,16 @@
       <p class="hero-greeting" id="hero-greeting">Welcome back</p>
       <p class="hero-sub">What are we doing today?</p>
     </section>
+
+    <button type="button" class="dash-card" data-goto="saved-screen">
+      <span class="dash-card-icon" aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.5 6.6L12 17l-5.9 3.5 1.5-6.6-5-4.6 6.6-.6L12 2.5z"/></svg></span>
+      <span class="dash-card-text">
+        <span class="dash-card-title">Saved Workouts</span>
+        <span class="dash-card-sub" id="home-saved-sub">Save a workout or plan to find it here</span>
+      </span>
+      <span class="dash-card-arrow" aria-hidden="true">›</span>
+    </button>
+    <div id="home-saved-list" class="home-saved-list"></div>
 
     <button type="button" class="dash-card" data-goto="setup-screen" data-presetmode="quick">
       <span class="dash-card-icon" aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" fill="currentColor"/></svg></span>
@@ -73,14 +83,6 @@
       <span aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8a2 2 0 0 1 2-2h1.5l1-2h7l1 2H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8z"/><circle cx="12" cy="13" r="3.5"/></svg></span> Scan Food
     </button>
 
-    <button type="button" class="dash-card" data-goto="saved-screen">
-      <span class="dash-card-icon" aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.5 6.6L12 17l-5.9 3.5 1.5-6.6-5-4.6 6.6-.6L12 2.5z"/></svg></span>
-      <span class="dash-card-text">
-        <span class="dash-card-title">Saved</span>
-        <span class="dash-card-sub" id="home-saved-sub">0 workouts saved</span>
-      </span>
-      <span class="dash-card-arrow" aria-hidden="true">›</span>
-    </button>
   </main>
 
   <!-- ============ BUILD / SETUP ============ -->
@@ -179,6 +181,7 @@
     <h2 id="workout-title" class="wo-title">Your Workout</h2>
     <div id="workout-sub" class="wo-sub"></div>
     <div id="workout-muscles" class="wo-muscle-row"></div>
+    <div id="wo-complete-banner" class="complete-banner" hidden></div>
     <div id="workout-list"></div>
     <button type="button" id="wo-add-exercise" class="wo-add-row"><span class="wo-add-icon" aria-hidden="true">+</span>Add an exercise</button>
     <button type="button" id="finish-btn" class="primary-btn" hidden>Finish Workout</button>
@@ -455,6 +458,6 @@
   </nav>
 
 </div>
-<script src="app.js?v=26"></script>
+<script src="app.js?v=27"></script>
 </body>
 </html>
