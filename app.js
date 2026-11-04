@@ -2153,6 +2153,38 @@ function qaSetModalMode(editing) {
   document.getElementById("qa-title").textContent = editing ? "Edit Meal" : "Quick Add";
   document.getElementById("qa-save-only-btn").textContent = editing ? "Save Changes" : "Save This Meal";
   document.getElementById("qa-log-save-btn").textContent = editing ? "Log and Save Changes" : "Log and Save This Meal";
+  document.getElementById("qa-log-only-btn").textContent = editing ? "Log Without Saving Changes" : "Log Without Saving";
+}
+
+// ---------- suggested meal name from the ingredients' brand + product names ----------
+let qaAutoName = ""; // last name we filled in, so we only overwrite it if the user hasn't typed their own
+
+function qaFirstBrand(brand) {
+  return (brand || "").split(",")[0].trim();
+}
+
+function qaIngredientLabel(ing) {
+  const name = (ing.name || "").trim();
+  const brand = qaFirstBrand(ing.brand);
+  if (!brand || name.toLowerCase().includes(brand.toLowerCase())) return name || brand;
+  return name ? `${brand} ${name}` : brand;
+}
+
+function qaSuggestMealName(ings) {
+  if (!ings.length) return "";
+  if (ings.length === 1) return qaIngredientLabel(ings[0]);
+  const names = ings.map(i => (i.name || "").trim()).filter(Boolean);
+  if (names.length === 2) return `${names[0]} & ${names[1]}`;
+  if (names.length === 3) return `${names[0]}, ${names[1]} & ${names[2]}`;
+  return `${names[0]}, ${names[1]} + ${names.length - 2} more`;
+}
+
+function qaApplySuggestedName() {
+  const input = document.getElementById("qa-meal-name");
+  const current = input.value.trim();
+  if (current && current !== qaAutoName) return; // user typed their own name, keep it
+  qaAutoName = qaSuggestMealName(qaIngredients);
+  input.value = qaAutoName;
 }
 
 // Rebuild editable ingredients from a saved meal. Meals saved before editing existed
@@ -2219,6 +2251,7 @@ async function qaOpenEditModal(index) {
   qaSetModalMode(true);
   qaServings = meal.servings || 1;
   document.getElementById("qa-meal-name").value = meal.name;
+  qaAutoName = "";
   if (qaMealHasFullIngredients(meal)) {
     qaIngredients = qaIngredientsFromMeal(meal);
     qaRenderIngredients();
@@ -2256,6 +2289,7 @@ function qaOpenModal() {
   document.getElementById("qa-search-results").hidden = true;
   document.getElementById("qa-search-results").innerHTML = "";
   document.getElementById("qa-meal-name").value = "";
+  qaAutoName = "";
   qaServings = 1;
   qaRenderIngredients();
   document.getElementById("qa-step-search").hidden = false;
@@ -2506,6 +2540,7 @@ document.getElementById("qa-next-btn").addEventListener("click", () => {
   if (!qaIngredients.length) return;
   document.getElementById("qa-step-search").hidden = true;
   document.getElementById("qa-step-finalize").hidden = false;
+  qaApplySuggestedName();
   qaRenderFinalize();
 });
 document.getElementById("qa-back-btn").addEventListener("click", () => {
@@ -2591,10 +2626,8 @@ document.getElementById("qa-save-only-btn").addEventListener("click", () => {
   renderSaved();
 });
 
-document.getElementById("qa-log-save-btn").addEventListener("click", () => {
-  const meal = qaBuildMealObject();
-  qaSaveMealToLibrary(meal);
-  // log one serving's worth of nutrition to today's food log
+// log one serving's worth of nutrition to the food log
+function qaLogMeal(meal) {
   addFoodEntry({
     name: meal.name,
     brand: "",
@@ -2607,7 +2640,17 @@ document.getElementById("qa-log-save-btn").addEventListener("click", () => {
   });
   qaCloseModal();
   updateHomeStats();
+}
+
+document.getElementById("qa-log-save-btn").addEventListener("click", () => {
+  const meal = qaBuildMealObject();
+  qaSaveMealToLibrary(meal);
+  qaLogMeal(meal);
   renderSaved();
+});
+
+document.getElementById("qa-log-only-btn").addEventListener("click", () => {
+  qaLogMeal(qaBuildMealObject());
 });
 
 // ============================================================
