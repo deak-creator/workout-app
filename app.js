@@ -538,6 +538,103 @@ function workoutTopMuscles(blocks, n = 4) {
 }
 
 // ============================================================
+// WORKOUT HISTORY + MUSCLE RECOVERY
+// ============================================================
+const HISTORY_KEY = "workoutHistory";
+// how hard each exercise type taxes the muscles it lists (stretches don't count)
+const TYPE_FATIGUE = { strength: 1, core: 0.8, cardio: 0.5, mobility: 0 };
+const SETS_FOR_FULL_FATIGUE = 6;     // ~6 hard sets on a muscle = fully fatigued
+const MIN_RECOVERY_HOURS = 36;       // light session
+const MAX_RECOVERY_HOURS = 72;       // heavy session
+const FRESH_THRESHOLD = 90;          // % at or above which a muscle counts as "fresh"
+
+function getWorkoutHistory() {
+  return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+}
+function setWorkoutHistory(list) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+}
+
+function loggedSets(ex) {
+  return ex._log ? ex._log.sets.filter(s => s.done).map(s => ({ reps: s.reps, weight: s.weight })) : [];
+}
+
+// Save (or update) a finished session. `target` is the workout/plan-day object holding blocks.
+function recordWorkout(target, meta) {
+  const exercises = target.blocks.flatMap(b => b.items)
+    .map(ex => ({ name: ex.name, type: ex.type, muscles: ex.muscles, sets: loggedSets(ex) }))
+    .filter(ex => ex.sets.length);
+  if (!exercises.length) return null;
+  const history = getWorkoutHistory();
+  const existing = target._historyId ? history.findIndex(h => h.id === target._historyId) : -1;
+  const entry = {
+    id: target._historyId || `w${Date.now()}${Math.random().toString(36).slice(2, 6)}`,
+    finishedAt: existing >= 0 ? history[existing].finishedAt : new Date().toISOString(),
+    title: meta.title,
+    goal: meta.goal,
+    duration: meta.duration,
+    exercises
+  };
+  if (existing >= 0) history[existing] = entry; else history.unshift(entry);
+  setWorkoutHistory(history);
+  target._historyId = entry.id;
+  return entry;
+}
+
+// per-region load (in "sets") for one history entry; first listed muscle is primary, the rest count half
+function workoutMuscleLoad(entry) {
+  const load = {};
+  entry.exercises.forEach(ex => {
+    const typeFactor = TYPE_FATIGUE[ex.type] ?? 1;
+    if (!typeFactor) return;
+    (ex.muscles || []).forEach((m, i) => {
+      const broad = m === "full body" || m === "cardio";
+      const w = typeFactor * (i === 0 ? 1 : 0.5) * (broad ? 0.4 : 1);
+      bodyRegionsFor([m]).forEach(r => { load[r] = (load[r] || 0) + ex.sets.length * w; });
+    });
+  });
+  return load;
+}
+
+// returns { fatigue: {region: 0..1}, fresh: {region: 0..100}, lastTrained: {region: ms} }
+function computeRecovery(history = getWorkoutHistory(), now = Date.now()) {
+  const fatigue = {}, lastTrained = {};
+  history.forEach(entry => {
+    const t = new Date(entry.finishedAt).getTime();
+    const hours = (now - t) / 3.6e6;
+    if (hours < 0) return;
+    Object.entries(workoutMuscleLoad(entry)).forEach(([r, sets]) => {
+      if (sets <= 0) return;
+      lastTrained[r] = Math.max(lastTrained[r] || 0, t);
+      const impact = Math.min(1, sets / SETS_FOR_FULL_FATIGUE);
+      const recoveryHours = MIN_RECOVERY_HOURS + (MAX_RECOVERY_HOURS - MIN_RECOVERY_HOURS) * impact;
+      const remaining = impact * Math.max(0, 1 - hours / recoveryHours);
+      if (remaining > 0) fatigue[r] = Math.min(1, (fatigue[r] || 0) + remaining);
+    });
+  });
+  const fresh = {};
+  ALL_BODY_MUSCLES.forEach(r => { fresh[r] = Math.round(100 * (1 - (fatigue[r] || 0))); });
+  return { fatigue, fresh, lastTrained };
+}
+
+// freshness of an exercise-data muscle name (aliases like "hips" use their least-recovered region)
+function muscleFreshPct(muscle, recovery) {
+  const regions = [...bodyRegionsFor([muscle])];
+  return regions.length ? Math.min(...regions.map(r => recovery.fresh[r] ?? 100)) : 100;
+}
+
+function daysSinceLastWorkout(history = getWorkoutHistory(), now = Date.now()) {
+  if (!history.length) return null;
+  const last = Math.max(...history.map(h => new Date(h.finishedAt).getTime()));
+  return Math.max(0, Math.floor((now - last) / 864e5));
+}
+
+function relativeDays(ms, now = Date.now()) {
+  const d = Math.floor((now - ms) / 864e5);
+  return d <= 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`;
+}
+
+// ============================================================
 // RENDERING — quick workout
 // ============================================================
 function renderWorkout(workout) {
@@ -553,10 +650,11 @@ function renderWorkout(workout) {
     `${allItems.length} exercises · ${titleCase(workout.difficulty)}`;
 
   const musclesEl = document.getElementById("workout-muscles");
+  const recovery = computeRecovery();
   musclesEl.innerHTML = top.map(t => `
     <div class="wo-muscle-tile">
       <div class="wo-muscle-figure">${bodySvg([t.muscle])}</div>
-      <span class="wo-muscle-badge">${t.count} ex</span>
+      <span class="wo-muscle-badge" title="Recovery">${muscleFreshPct(t.muscle, recovery)}%</span>
       <span class="wo-muscle-name">${titleCase(t.muscle)}</span>
     </div>`).join("");
 
@@ -569,15 +667,36 @@ function renderWorkout(workout) {
 // floating Start Workout button: opens the next exercise that hasn't been logged yet
 function updateStartButton() {
   const btn = document.getElementById("wo-start-btn");
+  const finishBtn = document.getElementById("finish-btn");
   const items = currentWorkout ? currentWorkout.blocks.flatMap(b => b.items) : [];
   const logged = items.filter(exerciseIsLogged).length;
-  btn.hidden = !items.length || logged === items.length;
-  document.getElementById("wo-start-text").textContent = logged ? "Next Exercise" : "Start Workout";
+  const allLogged = items.length > 0 && logged === items.length;
+  const finished = !!(currentWorkout && currentWorkout._historyId);
+  btn.hidden = !items.length || (allLogged && finished);
+  document.getElementById("wo-start-text").textContent =
+    allLogged ? "Finish Workout" : logged ? "Next Exercise" : "Start Workout";
+  finishBtn.hidden = !logged;
+  finishBtn.textContent = finished ? "Update Workout History" : "Finish Workout";
 }
+
+function finishCurrentWorkout() {
+  if (!currentWorkout) return;
+  const titleMap = { strength: "Strength", cardio: "Cardio", fatloss: "Fat Loss", mobility: "Mobility", general: "General Fitness" };
+  const muscles = workoutTopMuscles(currentWorkout.blocks, 3).map(t => titleCase(t.muscle)).join(", ");
+  const entry = recordWorkout(currentWorkout, {
+    title: muscles || titleMap[currentWorkout.goal],
+    goal: currentWorkout.goal,
+    duration: currentWorkout.duration
+  });
+  if (!entry) return;
+  updateStartButton();
+  showTab("recovery-screen");
+}
+document.getElementById("finish-btn").addEventListener("click", finishCurrentWorkout);
 
 document.getElementById("wo-start-btn").addEventListener("click", () => {
   const next = document.querySelector("#workout-list .exercise-card:not(.logged)");
-  if (!next) return;
+  if (!next) { finishCurrentWorkout(); return; }
   const panel = next.parentElement.querySelector(".exercise-log-panel");
   if (panel.hidden) next.click();
   next.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -870,6 +989,21 @@ function renderPlan(plan) {
     const exContainer = card.querySelector(".day-exercises");
     const planParamsForDay = { ...lastParams, duration: day.duration };
     renderBlocksInto(exContainer, day.blocks, planParamsForDay, () => renderPlan(plan));
+    if (anyLogged) {
+      const finishDay = document.createElement("button");
+      finishDay.type = "button";
+      finishDay.className = "primary-btn finish-day-btn";
+      finishDay.textContent = day._historyId ? "Update Workout History" : `Finish ${dayNames[dayIdx]}`;
+      finishDay.addEventListener("click", () => {
+        const entry = recordWorkout(day, {
+          title: `Week ${activeWeekIndex + 1} · ${dayNames[dayIdx]} · ${day.focus}`,
+          goal: plan.goal,
+          duration: day.duration
+        });
+        if (entry) showTab("recovery-screen");
+      });
+      card.appendChild(finishDay);
+    }
     dayListEl.appendChild(card);
   });
 }
@@ -883,6 +1017,79 @@ document.getElementById("save-plan-btn").addEventListener("click", () => {
   btn.textContent = "Saved ✓";
   setTimeout(() => { btn.textContent = "Save Plan"; }, 1500);
 });
+
+// ============================================================
+// RECOVERY SCREEN
+// ============================================================
+// where each region's % badge sits on the big figure (viewBox units 0-100 x 0-192)
+const RECOVERY_BADGE_ANCHORS = {
+  front: { shoulders: [69, 45], chest: [43, 52], biceps: [24, 66], forearms: [80, 90], core: [50, 74], obliques: [63, 90],
+           "hip flexors": [37, 104], quads: [41, 130], "inner thighs": [55, 124], calves: [59, 171] },
+  back: { shoulders: [31, 45], back: [50, 58], "lower back": [50, 89], triceps: [76, 66], forearms: [20, 90],
+          glutes: [57, 107], hamstrings: [42, 137], calves: [58, 171] }
+};
+
+function recoveryFigureHtml(view, recovery) {
+  const badges = Object.entries(RECOVERY_BADGE_ANCHORS[view])
+    .filter(([r]) => recovery.fresh[r] < 100)
+    .map(([r, [x, y]]) => `<span class="rec-badge" style="left:${x}%;top:${(y / 192) * 100}%">${recovery.fresh[r]}%</span>`)
+    .join("");
+  return `<div class="rec-figure-wrap">
+    <div class="rec-figure">${bodySvg([], { view, crop: false, levels: recovery.fatigue, className: "rec-svg" })}${badges}</div>
+    <div class="rec-figure-label">${view === "front" ? "Front" : "Back"}</div>
+  </div>`;
+}
+
+function renderRecovery() {
+  const history = getWorkoutHistory();
+  const recovery = computeRecovery(history);
+  const days = daysSinceLastWorkout(history);
+  const freshCount = ALL_BODY_MUSCLES.filter(r => recovery.fresh[r] >= FRESH_THRESHOLD).length;
+
+  document.getElementById("rec-days").textContent = days === null ? "–" : days;
+  document.getElementById("rec-days-label").textContent = days === 1 ? "Day since your last workout" : "Days since your last workout";
+  document.getElementById("rec-fresh").textContent = freshCount;
+  document.getElementById("rec-fresh-label").textContent = freshCount === 1 ? "Fresh muscle group" : "Fresh muscle groups";
+  document.getElementById("rec-figures").innerHTML = recoveryFigureHtml("front", recovery) + recoveryFigureHtml("back", recovery);
+
+  const trained = ALL_BODY_MUSCLES.filter(r => recovery.lastTrained[r] && Date.now() - recovery.lastTrained[r] < 7 * 864e5)
+    .sort((a, b) => recovery.fresh[a] - recovery.fresh[b]);
+  const musclesEl = document.getElementById("rec-muscle-list");
+  musclesEl.innerHTML = trained.length ? trained.map(r => {
+    const pct = recovery.fresh[r];
+    const state = pct >= FRESH_THRESHOLD ? "fresh" : pct >= 60 ? "recovering" : "sore";
+    return `<div class="rec-muscle-row">
+      <div class="rec-muscle-top"><span class="rec-muscle-name">${titleCase(r)}</span><span class="rec-muscle-pct ${state}">${pct}%</span></div>
+      <div class="rec-bar"><div class="rec-bar-fill ${state}" style="width:${pct}%"></div></div>
+      <div class="rec-muscle-sub">Trained ${relativeDays(recovery.lastTrained[r])}</div>
+    </div>`;
+  }).join("") : `<div class="empty-state">All muscles are fresh.<br>Finish a workout to start tracking recovery.</div>`;
+
+  const histEl = document.getElementById("rec-history-list");
+  if (!history.length) {
+    histEl.innerHTML = `<div class="empty-state">No workouts finished yet.<br>Log your sets, then tap Finish Workout.</div>`;
+    return;
+  }
+  histEl.innerHTML = "";
+  history.slice(0, 20).forEach(h => {
+    const sets = h.exercises.reduce((n, ex) => n + ex.sets.length, 0);
+    const volume = h.exercises.reduce((v, ex) => v + ex.sets.reduce((a, s) => a + (parseFloat(s.reps) || 0) * (parseFloat(s.weight) || 0), 0), 0);
+    const item = document.createElement("div");
+    item.className = "saved-item rec-history-item";
+    item.innerHTML = `
+      <div>
+        <div class="title">${h.title}</div>
+        <div class="sub">${new Date(h.finishedAt).toLocaleDateString()} · ${h.exercises.length} exercises · ${sets} sets${volume ? ` · ${Math.round(volume).toLocaleString()} kg` : ""}</div>
+      </div>
+      <button type="button" class="saved-delete-btn" aria-label="Delete workout">Delete</button>`;
+    item.querySelector("button").addEventListener("click", () => {
+      if (!confirm("Delete this workout from your history?")) return;
+      setWorkoutHistory(getWorkoutHistory().filter(x => x.id !== h.id));
+      renderRecovery();
+    });
+    histEl.appendChild(item);
+  });
+}
 
 // ============================================================
 // SAVED LIST (workouts + plans)
@@ -1038,6 +1245,17 @@ function updateHomeStats() {
   const savedSubEl = document.getElementById("home-saved-sub");
   if (savedSubEl) savedSubEl.textContent = `${savedWorkouts.length} workout${savedWorkouts.length === 1 ? "" : "s"} saved`;
 
+  const recSubEl = document.getElementById("home-recovery-sub");
+  if (recSubEl) {
+    const history = getWorkoutHistory();
+    const recovery = computeRecovery(history);
+    const fresh = ALL_BODY_MUSCLES.filter(r => recovery.fresh[r] >= FRESH_THRESHOLD).length;
+    const days = daysSinceLastWorkout(history);
+    recSubEl.textContent = days === null
+      ? "Finish a workout to track recovery"
+      : `${fresh} fresh muscle groups · last workout ${days === 0 ? "today" : days === 1 ? "yesterday" : days + " days ago"}`;
+  }
+
   setMiniRing("protein", totals.protein, targets.protein);
   setMiniRing("carbs", totals.carbs, targets.carbs);
   setMiniRing("fat", totals.fat, targets.fat);
@@ -1084,7 +1302,8 @@ const titleByScreen = {
   "workout-screen": "Your Workout",
   "plan-screen": "Your Plan",
   "nutrition-screen": "Nutrition",
-  "saved-screen": "Saved"
+  "saved-screen": "Saved",
+  "recovery-screen": "Recovery"
 };
 const _origShowTab = showTab;
 showTab = function (id) {
@@ -1094,6 +1313,7 @@ showTab = function (id) {
   document.querySelector(".topbar").hidden = id === "workout-screen";
   if (id === "home-screen") updateHomeStats();
   if (id === "nutrition-screen") renderFoodLog();
+  if (id === "recovery-screen") renderRecovery();
   // sync bottom tabbar highlight for screens not directly in tabbar (workout/plan detail views)
   const tabMap = { "setup-screen": "setup-screen", "workout-screen": "setup-screen", "plan-screen": "setup-screen" };
   const activeTabId = tabMap[id] || id;
