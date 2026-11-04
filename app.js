@@ -3,6 +3,7 @@ let currentWorkout = null;
 let currentPlan = null;
 let lastParams = null;
 let activeWeekIndex = 0;
+let activePlanDayIndex = null; // null = jump to the first unfinished day
 
 const ALL_EQUIPMENT = ["bodyweight", "dumbbells", "bands", "kettlebell", "pullup bar", "barbell", "cable machine", "bench"];
 const HOME_EQUIPMENT = ["bodyweight", "dumbbells", "bands", "kettlebell", "pullup bar"];
@@ -118,6 +119,7 @@ document.getElementById("setup-form").addEventListener("submit", e => {
     lastParams = planParams;
     currentPlan = generatePlan(planParams);
     activeWeekIndex = 0;
+    activePlanDayIndex = null;
     renderPlan(currentPlan);
     showTab("plan-screen");
   } else {
@@ -717,8 +719,10 @@ function daysSinceLastWorkout(history = getWorkoutHistory(), now = Date.now()) {
   return Math.max(0, Math.floor((now - last) / 864e5));
 }
 
+// calendar days, so last night's workout reads "yesterday" even if it was under 24 h ago
 function relativeDays(ms, now = Date.now()) {
-  const d = Math.floor((now - ms) / 864e5);
+  const startOfDay = t => { const x = new Date(t); x.setHours(0, 0, 0, 0); return x.getTime(); };
+  const d = Math.round((startOfDay(now) - startOfDay(ms)) / 864e5);
   return d <= 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`;
 }
 
@@ -783,11 +787,9 @@ function finishCurrentWorkout() {
 document.getElementById("finish-btn").addEventListener("click", finishCurrentWorkout);
 
 document.getElementById("wo-start-btn").addEventListener("click", () => {
-  const next = document.querySelector("#workout-list .exercise-card:not(.logged)");
+  const next = currentWorkout && currentWorkout.blocks.flatMap(b => b.items).find(ex => !exerciseIsLogged(ex));
   if (!next) { finishCurrentWorkout(); return; }
-  const panel = next.parentElement.querySelector(".exercise-log-panel");
-  if (panel.hidden) next.click();
-  next.scrollIntoView({ behavior: "smooth", block: "start" });
+  openExerciseDetail(next, "workout-screen", () => renderWorkout(currentWorkout));
 });
 document.getElementById("wo-plan-pill").addEventListener("click", () => showTab("setup-screen"));
 
@@ -862,15 +864,20 @@ function renderBlocksInto(container, blocks, params, onChange) {
       wrap.className = "exercise-card-wrap";
 
       const row = document.createElement("div");
-      row.className = "exercise-card" + (exerciseIsLogged(ex) ? " logged" : "");
+      const logged = exerciseIsLogged(ex);
+      row.className = "exercise-card" + (logged ? " logged" : "");
       row.innerHTML = `
-        <div class="ex-thumb">${bodySvg(ex.muscles)}${exerciseIsLogged(ex) ? '<span class="ex-done">✓</span>' : ""}</div>
+        <div class="ex-thumb">${bodySvg(ex.muscles)}</div>
         <div class="info">
           <div class="name">${ex.name}</div>
+          <div class="ex-muscle-sub">${(ex.muscles || []).slice(0, 2).map(titleCase).join(" · ")}</div>
           <div class="meta">${exercisePlanSummary(ex)}</div>
-          ${exerciseIsLogged(ex) ? `<div class="log-badge">${exerciseSetSummary(ex)}</div>` : ""}
+          ${logged ? `<div class="log-badge">${exerciseSetSummary(ex)}</div>` : ""}
         </div>
-        <button type="button" class="swap-btn" title="Swap exercise" aria-label="Swap ${ex.name}">⇄</button>
+        <div class="ex-side">
+          <span class="ex-check${logged ? " done" : ""}" aria-label="${logged ? "Logged" : "Not logged yet"}">✓</span>
+          <button type="button" class="swap-btn" title="Swap exercise" aria-label="Swap ${ex.name}">⇄</button>
+        </div>
       `;
       counter++;
       row.querySelector(".swap-btn").addEventListener("click", e => {
@@ -882,24 +889,12 @@ function renderBlocksInto(container, blocks, params, onChange) {
         onChange();
       });
 
-      const panel = document.createElement("div");
-      panel.className = "exercise-log-panel";
-      panel.hidden = true;
-
       row.addEventListener("click", () => {
-        const isOpen = !panel.hidden;
-        wrap.querySelectorAll(".exercise-log-panel").forEach(p => { if (p !== panel) p.hidden = true; });
-        if (isOpen) {
-          panel.hidden = true;
-        } else {
-          panel.innerHTML = "";
-          panel.appendChild(buildLogPanel(ex, () => { onChange(); }));
-          panel.hidden = false;
-        }
+        const screen = container.closest(".screen");
+        openExerciseDetail(ex, screen ? screen.id : "workout-screen", onChange);
       });
 
       wrap.appendChild(row);
-      wrap.appendChild(panel);
       h.appendChild(wrap);
     });
     container.appendChild(h);
@@ -917,13 +912,13 @@ function exercisePlanSummary(ex) {
     ? `${sets} sets • ${ex.durationLabel}`
     : `${ex.durationLabel} • ${titleCase(ex.equipment)}`;
 }
-// e.g. "3 sets • 10 reps • 20 kg" from what was actually logged
+// e.g. "3/3 sets • Reps 10/10/8 • 30 kg" from what was actually logged
 function exerciseSetSummary(ex) {
   const done = ex._log.sets.filter(s => s.done);
-  const parts = [`${done.length}/${ex._log.sets.length} sets done`];
-  const reps = done.map(s => parseFloat(s.reps)).filter(n => n > 0);
+  const parts = [`${done.length}/${ex._log.sets.length} sets`];
+  const reps = done.map(s => parseFloat(s.reps) || 0);
   const weights = done.map(s => parseFloat(s.weight)).filter(n => n > 0);
-  if (reps.length) parts.push(`${Math.max(...reps)} reps`);
+  if (reps.some(n => n > 0)) parts.push(`Reps ${reps.join("/")}`);
   if (weights.length) parts.push(`${Math.max(...weights)} kg`);
   return parts.join(" • ");
 }
@@ -931,90 +926,207 @@ function defaultLog() {
   return { sets: [{ reps: "", weight: "", done: false }, { reps: "", weight: "", done: false }, { reps: "", weight: "", done: false }], note: "", restSeconds: 90 };
 }
 
-function buildLogPanel(ex, onSave) {
-  const log = ex._log ? JSON.parse(JSON.stringify(ex._log)) : defaultLog();
+// ============================================================
+// EXERCISE PAGE — full screen: body hero, muscles, History | Log tabs
+// ============================================================
+let exDetail = null; // { ex, returnTo, onDone, scrollY, tab, log }
+let restInterval = null;
 
-  const panel = document.createElement("div");
-  panel.innerHTML = `
+function stopRestTimer() {
+  if (restInterval) { clearInterval(restInterval); restInterval = null; }
+}
+
+// every past session (newest first) that included this exercise
+function exerciseHistory(name, history = getWorkoutHistory()) {
+  return history
+    .map(h => ({ finishedAt: h.finishedAt, title: h.title, id: h.id, ex: h.exercises.find(e => e.name === name) }))
+    .filter(h => h.ex && h.ex.sets.length)
+    .sort((a, b) => new Date(b.finishedAt) - new Date(a.finishedAt));
+}
+
+// new log pre-filled with what you lifted last time (sets unticked), so logging is mostly tapping ✓
+function prefilledLog(ex) {
+  const log = defaultLog();
+  const last = exerciseHistory(ex.name)[0];
+  if (last) {
+    log.sets = last.ex.sets.map(st => ({ reps: String(st.reps ?? ""), weight: String(st.weight ?? ""), done: false }));
+    while (log.sets.length < 3) log.sets.push({ reps: "", weight: "", done: false });
+  }
+  return log;
+}
+
+function openExerciseDetail(ex, returnTo, onDone) {
+  stopRestTimer();
+  exDetail = {
+    ex, returnTo, onDone,
+    scrollY: window.scrollY || 0,
+    tab: "log",
+    log: ex._log ? JSON.parse(JSON.stringify(ex._log)) : prefilledLog(ex)
+  };
+  renderExerciseDetail();
+  showTab("exercise-screen");
+  window.scrollTo(0, 0);
+}
+
+function closeExerciseDetail(save) {
+  const d = exDetail;
+  if (!d) return;
+  stopRestTimer();
+  if (save) {
+    d.ex._log = d.log;
+    d.ex._done = d.log.sets.some(st => st.done);
+  }
+  exDetail = null;
+  showTab(d.returnTo);
+  if (d.onDone) d.onDone();
+  window.scrollTo(0, d.scrollY);
+}
+
+function renderExerciseDetail() {
+  const { ex, tab } = exDetail;
+  document.getElementById("exd-title").textContent = ex.name;
+  document.getElementById("exd-hero").innerHTML = `
+    <div class="exd-figures">
+      ${bodySvg(ex.muscles, { view: "front", crop: false, className: "exd-svg" })}
+      ${bodySvg(ex.muscles, { view: "back", crop: false, className: "exd-svg" })}
+    </div>
+    <div class="exd-hero-chips">
+      ${ex.durationLabel ? `<span class="exd-chip">${exercisePlanSummary(ex)}</span>` : ""}
+      <span class="exd-chip type">${titleCase(ex.type || "")}</span>
+    </div>`;
+  document.getElementById("exd-muscles").innerHTML =
+    `<strong>Muscles:</strong> ${(ex.muscles || []).map(titleCase).join(", ")}<span class="exd-equip"> · ${titleCase(ex.equipment || "")}</span>`;
+  document.querySelectorAll(".exd-tab").forEach(b => {
+    const on = b.dataset.exdTab === tab;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  const body = document.getElementById("exd-body");
+  body.innerHTML = "";
+  if (tab === "history") renderExerciseHistoryTab(body);
+  else renderExerciseLogTab(body);
+}
+
+function renderExerciseHistoryTab(body) {
+  const sessions = exerciseHistory(exDetail.ex.name);
+  if (!sessions.length) {
+    body.innerHTML = `<div class="empty-state">No history yet. Finish a workout with this exercise and your sets will show here.</div>`;
+    return;
+  }
+  const best = sessions.flatMap(h => h.ex.sets).reduce((b, st) => {
+    const wgt = parseFloat(st.weight) || 0, reps = parseFloat(st.reps) || 0;
+    return (wgt > b.weight || (wgt === b.weight && reps > b.reps)) ? { weight: wgt, reps } : b;
+  }, { weight: 0, reps: 0 });
+  const bestHtml = best.weight || best.reps
+    ? `<div class="exd-best">Best set: <strong>${best.weight ? best.weight + " kg × " : ""}${best.reps} reps</strong></div>` : "";
+  body.innerHTML = bestHtml + sessions.map(h => {
+    const when = new Date(h.finishedAt);
+    return `
+      <div class="exd-hist-card">
+        <div class="exd-hist-head"><span class="exd-hist-date">${when.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}</span><span class="exd-hist-rel">${relativeDays(when.getTime())}</span></div>
+        ${h.ex.sets.map((st, i) => `<div class="exd-hist-set"><span class="set-num">${i + 1}</span><span>${st.reps || 0} reps</span><span>${parseFloat(st.weight) ? st.weight + " kg" : "Bodyweight"}</span></div>`).join("")}
+      </div>`;
+  }).join("");
+}
+
+function renderExerciseLogTab(body) {
+  const log = exDetail.log;
+  const restLabel = `Rest for ${Math.round(log.restSeconds / 60) || 1} min`;
+  body.innerHTML = `
+    <div class="exd-complete" hidden>
+      <div class="exd-complete-box"><span class="exd-tick">✓</span> All sets completed</div>
+      <button type="button" class="exd-restart-btn">Restart</button>
+    </div>
     <div class="rest-banner">
-      <div class="rest-text"><strong id="rest-time-display">Rest for ${Math.round(log.restSeconds / 60) || 1} min</strong><span>Rest between each set</span></div>
+      <div class="rest-text"><strong class="rest-time-display">${restLabel}</strong><span>Rest between each set</span></div>
       <button type="button" class="rest-play-btn" aria-label="Start rest timer">▶</button>
     </div>
     <div class="set-grid">
       <div class="set-grid-header"><span></span><span>Reps</span><span>Weight (kg)</span><span></span></div>
       <div class="set-rows"></div>
     </div>
-    <button type="button" class="add-set-btn">+ Add set</button>
-    <textarea class="note-input" placeholder="Add your note here…">${log.note || ""}</textarea>
+    <button type="button" class="add-set-btn">+ Add New Set</button>
+    <textarea class="note-input" placeholder="Add your note here…"></textarea>
+    <div class="exd-status"></div>
     <div class="log-actions">
       <button type="button" class="primary-btn log-save-btn">Save Changes</button>
       <button type="button" class="primary-btn secondary log-cancel-btn">Cancel</button>
     </div>
   `;
+  const note = body.querySelector(".note-input");
+  note.value = log.note || "";
+  note.addEventListener("input", () => { log.note = note.value; });
 
-  const rowsEl = panel.querySelector(".set-rows");
+  const rowsEl = body.querySelector(".set-rows");
+  function refreshStatus() {
+    const done = log.sets.filter(st => st.done).length;
+    const all = log.sets.length > 0 && done === log.sets.length;
+    body.querySelector(".exd-complete").hidden = !all;
+    body.querySelector(".exd-status").textContent = all ? "You have marked all sets."
+      : done ? `${done} of ${log.sets.length} sets marked.` : "Tap ✓ on each set as you finish it.";
+  }
   function renderSetRows() {
     rowsEl.innerHTML = "";
-    log.sets.forEach((s, i) => {
+    log.sets.forEach((st, i) => {
       const r = document.createElement("div");
-      r.className = "set-row";
+      r.className = "set-row" + (st.done ? " done" : "");
       r.innerHTML = `
         <span class="set-num">${i + 1}</span>
-        <input type="number" inputmode="numeric" class="set-reps" placeholder="0" value="${s.reps}">
-        <input type="number" inputmode="decimal" class="set-weight" placeholder="0" value="${s.weight}">
-        <button type="button" class="set-check${s.done ? " done" : ""}" aria-label="Mark set ${i + 1} complete">✓</button>
+        <input type="number" inputmode="numeric" class="set-reps" placeholder="0" value="${st.reps}">
+        <input type="number" inputmode="decimal" class="set-weight" placeholder="0" value="${st.weight}">
+        <button type="button" class="set-check${st.done ? " done" : ""}" aria-label="Mark set ${i + 1} complete">✓</button>
       `;
-      r.querySelector(".set-reps").addEventListener("input", e => { s.reps = e.target.value; });
-      r.querySelector(".set-weight").addEventListener("input", e => { s.weight = e.target.value; });
+      // typing only updates the model, no re-render, so the iPhone keyboard stays open
+      r.querySelector(".set-reps").addEventListener("input", e => { st.reps = e.target.value; });
+      r.querySelector(".set-weight").addEventListener("input", e => { st.weight = e.target.value; });
       r.querySelector(".set-check").addEventListener("click", () => {
-        s.done = !s.done;
+        st.done = !st.done;
         renderSetRows();
       });
       rowsEl.appendChild(r);
     });
+    refreshStatus();
   }
   renderSetRows();
 
-  panel.querySelector(".add-set-btn").addEventListener("click", () => {
-    log.sets.push({ reps: "", weight: "", done: false });
+  body.querySelector(".add-set-btn").addEventListener("click", () => {
+    const prev = log.sets[log.sets.length - 1];
+    log.sets.push({ reps: prev ? prev.reps : "", weight: prev ? prev.weight : "", done: false });
+    renderSetRows();
+  });
+  body.querySelector(".exd-restart-btn").addEventListener("click", () => {
+    log.sets.forEach(st => { st.done = false; });
     renderSetRows();
   });
 
-  let restInterval = null;
-  panel.querySelector(".rest-play-btn").addEventListener("click", e => {
+  body.querySelector(".rest-play-btn").addEventListener("click", e => {
     const btn = e.currentTarget;
-    const display = panel.querySelector("#rest-time-display");
-    if (restInterval) { clearInterval(restInterval); restInterval = null; }
+    const display = body.querySelector(".rest-time-display");
+    stopRestTimer();
     let remaining = log.restSeconds;
     btn.disabled = true;
     restInterval = setInterval(() => {
       remaining -= 1;
-      const m = Math.floor(remaining / 60);
-      const s = remaining % 60;
-      display.textContent = `Rest: ${m}:${String(s).padStart(2, "0")}`;
+      display.textContent = `Rest: ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`;
       if (remaining <= 0) {
-        clearInterval(restInterval);
-        restInterval = null;
-        display.textContent = `Rest for ${Math.round(log.restSeconds / 60) || 1} min`;
+        stopRestTimer();
+        display.textContent = restLabel;
         btn.disabled = false;
       }
     }, 1000);
   });
 
-  panel.querySelector(".log-save-btn").addEventListener("click", () => {
-    log.note = panel.querySelector(".note-input").value;
-    ex._log = log;
-    ex._done = log.sets.some(s => s.done);
-    if (restInterval) clearInterval(restInterval);
-    onSave();
-  });
-  panel.querySelector(".log-cancel-btn").addEventListener("click", () => {
-    if (restInterval) clearInterval(restInterval);
-    onSave();
-  });
-
-  return panel;
+  body.querySelector(".log-save-btn").addEventListener("click", () => closeExerciseDetail(true));
+  body.querySelector(".log-cancel-btn").addEventListener("click", () => closeExerciseDetail(false));
 }
+
+document.getElementById("exd-back-btn").addEventListener("click", () => closeExerciseDetail(false));
+document.querySelectorAll(".exd-tab").forEach(b => b.addEventListener("click", () => {
+  if (!exDetail || exDetail.tab === b.dataset.exdTab) return;
+  stopRestTimer();
+  exDetail.tab = b.dataset.exdTab;
+  renderExerciseDetail();
+}));
 
 // ---------- save quick workout ----------
 document.getElementById("save-btn").addEventListener("click", () => {
@@ -1040,63 +1152,92 @@ function renderPlan(plan) {
   plan.weeks.forEach((wk, i) => {
     const btn = document.createElement("button");
     btn.className = "week-tab" + (i === activeWeekIndex ? " active" : "");
-    btn.textContent = `Week ${i + 1}`;
+    btn.innerHTML = `${weekIsDone(wk) ? '<span class="pill-check">✓</span>' : ""}Week ${i + 1}`;
     btn.addEventListener("click", () => {
       activeWeekIndex = i;
+      activePlanDayIndex = null;
       renderPlan(plan);
     });
     tabsEl.appendChild(btn);
   });
 
+  const week = plan.weeks[activeWeekIndex];
+  if (activePlanDayIndex === null || activePlanDayIndex >= week.days.length) activePlanDayIndex = firstOpenDayIndex(week);
+
+  const pillsEl = document.getElementById("plan-day-pills");
+  pillsEl.innerHTML = "";
+  week.days.forEach((day, dayIdx) => {
+    const pill = document.createElement("button");
+    pill.type = "button";
+    pill.className = "day-pill" + (dayIdx === activePlanDayIndex ? " active" : "") + (day.isRest ? " rest" : "");
+    pill.innerHTML = `${planDayIsDone(day) ? '<span class="pill-check">✓</span>' : ""}Day ${dayIdx + 1}`;
+    pill.addEventListener("click", () => {
+      activePlanDayIndex = dayIdx;
+      renderPlan(plan);
+    });
+    pillsEl.appendChild(pill);
+  });
+  const activePill = pillsEl.children[activePlanDayIndex];
+  if (activePill && activePill.scrollIntoView) activePill.scrollIntoView({ block: "nearest", inline: "center" });
+
   const dayListEl = document.getElementById("plan-day-list");
   dayListEl.innerHTML = "";
-  const week = plan.weeks[activeWeekIndex];
-  const dayNames = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7"];
-
-  week.days.forEach((day, dayIdx) => {
-    const card = document.createElement("div");
-    if (day.isRest) {
-      card.className = "day-card rest";
-      card.innerHTML = `
-        <div>
-          <div class="day-name">${dayNames[dayIdx]} · Rest Day</div>
-        </div>
+  const dayIdx = activePlanDayIndex;
+  const day = week.days[dayIdx];
+  const dayName = `Day ${dayIdx + 1}`;
+  if (day.isRest) {
+    dayListEl.innerHTML = `
+      <div class="day-card rest">
+        <div><div class="day-name">${dayName} · Rest Day</div><div class="day-focus">Recover today and come back stronger.</div></div>
         <div class="rest-icon">🌙</div>
-      `;
-      dayListEl.appendChild(card);
-      return;
-    }
-    const allExercises = day.blocks.flatMap(b => b.items);
-    const anyLogged = allExercises.some(ex => exerciseIsLogged(ex));
-    const allLogged = allExercises.length > 0 && allExercises.every(ex => exerciseIsLogged(ex));
-    card.className = "day-card";
-    card.innerHTML = `
-      <div class="day-header">
-        <span class="day-name">${allLogged ? '<span class="day-check">✓</span> ' : ""}${dayNames[dayIdx]}</span>
-        <span class="day-focus">${day.focus} · ${day.duration} min${anyLogged && !allLogged ? " · In progress" : ""}</span>
-      </div>
-      <div class="day-exercises"></div>
-    `;
-    const exContainer = card.querySelector(".day-exercises");
-    const planParamsForDay = { ...lastParams, duration: day.duration };
-    renderBlocksInto(exContainer, day.blocks, planParamsForDay, () => renderPlan(plan));
-    if (anyLogged) {
-      const finishDay = document.createElement("button");
-      finishDay.type = "button";
-      finishDay.className = "primary-btn finish-day-btn";
-      finishDay.textContent = day._historyId ? "Update Workout History" : `Finish ${dayNames[dayIdx]}`;
-      finishDay.addEventListener("click", () => {
-        const entry = recordWorkout(day, {
-          title: `Week ${activeWeekIndex + 1} · ${dayNames[dayIdx]} · ${day.focus}`,
-          goal: plan.goal,
-          duration: day.duration
-        });
-        if (entry) showTab("recovery-screen");
+      </div>`;
+    return;
+  }
+  const allExercises = day.blocks.flatMap(b => b.items);
+  const loggedCount = allExercises.filter(exerciseIsLogged).length;
+  const head = document.createElement("div");
+  head.className = "plan-day-head";
+  head.innerHTML = `
+    <div class="plan-day-title">${day.focus}</div>
+    <div class="plan-day-sub">${allExercises.length} Exercises · ${day.duration} min${loggedCount ? ` · ${loggedCount}/${allExercises.length} logged` : ""}</div>`;
+  dayListEl.appendChild(head);
+
+  const exContainer = document.createElement("div");
+  exContainer.className = "day-exercises";
+  dayListEl.appendChild(exContainer);
+  const planParamsForDay = { ...lastParams, duration: day.duration };
+  renderBlocksInto(exContainer, day.blocks, planParamsForDay, () => renderPlan(plan));
+
+  if (loggedCount) {
+    const finishDay = document.createElement("button");
+    finishDay.type = "button";
+    finishDay.className = "primary-btn finish-day-btn";
+    finishDay.textContent = day._historyId ? "Update Workout History" : `Finish ${dayName}`;
+    finishDay.addEventListener("click", () => {
+      const entry = recordWorkout(day, {
+        title: `Week ${activeWeekIndex + 1} · ${dayName} · ${day.focus}`,
+        goal: plan.goal,
+        duration: day.duration
       });
-      card.appendChild(finishDay);
-    }
-    dayListEl.appendChild(card);
-  });
+      if (entry) showTab("recovery-screen");
+    });
+    dayListEl.appendChild(finishDay);
+  }
+}
+
+// a plan day counts as done once it's been finished, or every exercise in it is logged
+function planDayIsDone(day) {
+  if (day.isRest) return false;
+  const items = day.blocks.flatMap(b => b.items);
+  return !!day._historyId || (items.length > 0 && items.every(exerciseIsLogged));
+}
+function weekIsDone(week) {
+  const trainingDays = week.days.filter(d => !d.isRest);
+  return trainingDays.length > 0 && trainingDays.every(planDayIsDone);
+}
+function firstOpenDayIndex(week) {
+  const i = week.days.findIndex(d => !d.isRest && !planDayIsDone(d));
+  return i >= 0 ? i : 0;
 }
 
 document.getElementById("save-plan-btn").addEventListener("click", () => {
@@ -1211,6 +1352,7 @@ function renderSaved() {
       item.querySelector("div").addEventListener("click", () => {
         currentPlan = w;
         activeWeekIndex = 0;
+        activePlanDayIndex = null;
         lastParams = { goal: w.goal, difficulty: w.difficulty, equipment: new Set(w.equipment), muscles: new Set() };
         renderPlan(w);
         showTab("plan-screen");
@@ -1394,19 +1536,21 @@ const titleByScreen = {
   "plan-screen": "Your Plan",
   "nutrition-screen": "Nutrition",
   "saved-screen": "Saved",
-  "recovery-screen": "Recovery"
+  "recovery-screen": "Recovery",
+  "exercise-screen": "Exercise"
 };
 const _origShowTab = showTab;
 showTab = function (id) {
   _origShowTab(id);
   const titleEl = document.getElementById("topbar-title");
   if (titleEl && titleByScreen[id]) titleEl.textContent = titleByScreen[id];
-  document.querySelector(".topbar").hidden = id === "workout-screen";
+  document.querySelector(".topbar").hidden = id === "workout-screen" || id === "exercise-screen";
+  if (id !== "exercise-screen" && exDetail) { stopRestTimer(); exDetail = null; }
   if (id === "home-screen") updateHomeStats();
   if (id === "nutrition-screen") renderFoodLog();
   if (id === "recovery-screen") renderRecovery();
   // sync bottom tabbar highlight for screens not directly in tabbar (workout/plan detail views)
-  const tabMap = { "setup-screen": "setup-screen", "workout-screen": "setup-screen", "plan-screen": "setup-screen" };
+  const tabMap = { "setup-screen": "setup-screen", "workout-screen": "setup-screen", "plan-screen": "setup-screen", "exercise-screen": "setup-screen" };
   const activeTabId = tabMap[id] || id;
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === activeTabId));
 };
