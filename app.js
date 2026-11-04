@@ -1669,7 +1669,8 @@ const titleByScreen = {
   "nutrition-screen": "Nutrition",
   "saved-screen": "Saved",
   "recovery-screen": "Recovery",
-  "exercise-screen": "Exercise"
+  "exercise-screen": "Exercise",
+  "recipes-screen": "Recipes"
 };
 const _origShowTab = showTab;
 showTab = function (id) {
@@ -1681,8 +1682,9 @@ showTab = function (id) {
   if (id === "home-screen") updateHomeStats();
   if (id === "nutrition-screen") renderFoodLog();
   if (id === "recovery-screen") renderRecovery();
+  if (id === "recipes-screen") renderRecipes();
   // sync bottom tabbar highlight for screens not directly in tabbar (workout/plan detail views)
-  const tabMap = { "setup-screen": "setup-screen", "workout-screen": "setup-screen", "plan-screen": "setup-screen", "exercise-screen": "setup-screen" };
+  const tabMap = { "setup-screen": "setup-screen", "workout-screen": "setup-screen", "plan-screen": "setup-screen", "exercise-screen": "setup-screen", "recipes-screen": "nutrition-screen" };
   const activeTabId = tabMap[id] || id;
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === activeTabId));
 };
@@ -2611,6 +2613,7 @@ function qaSaveMealToLibrary(meal) {
   const meals = qaGetSavedMeals();
   if (qaEditingIndex !== null && meals[qaEditingIndex]) {
     meal.createdAt = meals[qaEditingIndex].createdAt;
+    if (meals[qaEditingIndex].recipeId) meal.recipeId = meals[qaEditingIndex].recipeId;
     meal.updatedAt = new Date().toISOString();
     meals[qaEditingIndex] = meal;
   } else {
@@ -2651,6 +2654,226 @@ document.getElementById("qa-log-save-btn").addEventListener("click", () => {
 
 document.getElementById("qa-log-only-btn").addEventListener("click", () => {
   qaLogMeal(qaBuildMealObject());
+});
+
+// ============================================================
+// RECIPE INDEX — built-in recipes (data/recipes.json), log or save to My Meals
+// ============================================================
+const RECIPE_FILTERS = [
+  ["all", "All"], ["breakfast", "Breakfast"], ["lunch", "Lunch"], ["dinner", "Dinner"], ["snack", "Snacks"],
+  ["protein", "High Protein"], ["vegetarian", "Vegetarian"], ["quick", "Under 15 min"]
+];
+const RECIPE_CATEGORY_LABELS = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snack" };
+const RECIPE_FRACTIONS = { 0.25: "¼", 0.5: "½", 0.75: "¾" };
+
+let recipeDataPromise = null;
+let recipeData = null;      // { foods, recipes }
+let recipeFilter = "all";
+let recipeQuery = "";
+let recipeOpenId = null;    // recipe shown in the detail view, null = list view
+let recipeServings = 1;     // servings the user is making (scales ingredient amounts)
+
+function loadRecipes() {
+  if (!recipeDataPromise) {
+    recipeDataPromise = fetch("data/recipes.json")
+      .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(data => { recipeData = data; return data; })
+      .catch(err => { recipeDataPromise = null; throw err; });
+  }
+  return recipeDataPromise;
+}
+
+function recipePerServing(recipe) {
+  const per = { calories: 0, protein: 0, carbs: 0, fat: 0 };
+  recipe.ingredients.forEach(i => {
+    const p100 = recipeData.foods[i.food].per100;
+    Object.keys(per).forEach(k => { per[k] += p100[k] * i.grams / 100; });
+  });
+  Object.keys(per).forEach(k => { per[k] /= recipe.servings; });
+  return per;
+}
+
+function recipeIsHighProtein(per) {
+  return per.protein >= 25 || per.protein * 4 >= per.calories * 0.3;
+}
+
+function recipeMatches(recipe) {
+  const per = recipePerServing(recipe);
+  const f = recipeFilter;
+  if (RECIPE_CATEGORY_LABELS[f] && recipe.category !== f) return false;
+  if (f === "protein" && !recipeIsHighProtein(per)) return false;
+  if (f === "vegetarian" && !recipe.vegetarian) return false;
+  if (f === "quick" && recipe.minutes > 15) return false;
+  const q = recipeQuery.trim().toLowerCase();
+  if (!q) return true;
+  const haystack = [recipe.name, ...recipe.ingredients.map(i => i.label), ...recipe.ingredients.map(i => recipeData.foods[i.food].name)]
+    .join(" ").toLowerCase();
+  return q.split(/\s+/).every(word => haystack.includes(word));
+}
+
+function recipeTagsHtml(recipe, per) {
+  const tags = [];
+  if (recipeIsHighProtein(per)) tags.push(`<span class="recipe-tag protein">High protein</span>`);
+  if (recipe.vegetarian) tags.push(`<span class="recipe-tag veg">Vegetarian</span>`);
+  if (recipe.minutes <= 15) tags.push(`<span class="recipe-tag quick">Quick</span>`);
+  return tags.join("");
+}
+
+function recipeIsSaved(recipe) {
+  return qaGetSavedMeals().some(m => m.recipeId === recipe.id);
+}
+
+function renderRecipes() {
+  const listView = document.getElementById("recipes-list-view");
+  const detail = document.getElementById("recipe-detail");
+  const listEl = document.getElementById("recipes-list");
+  if (!recipeData) {
+    listView.hidden = false;
+    detail.hidden = true;
+    listEl.innerHTML = `<div class="empty-state">Loading recipes…</div>`;
+    loadRecipes().then(renderRecipes).catch(() => {
+      listEl.innerHTML = `<div class="empty-state">Couldn't load recipes.<br>Check your connection and try again.</div>`;
+    });
+    return;
+  }
+  const open = recipeOpenId && recipeData.recipes.find(r => r.id === recipeOpenId);
+  listView.hidden = !!open;
+  detail.hidden = !open;
+  if (open) renderRecipeDetail(open);
+  else renderRecipeList();
+}
+
+function renderRecipeList() {
+  document.getElementById("recipe-filters").innerHTML = RECIPE_FILTERS.map(([key, label]) =>
+    `<button type="button" class="chip${recipeFilter === key ? " selected" : ""}" data-recipe-filter="${key}" role="tab" aria-selected="${recipeFilter === key}">${label}</button>`
+  ).join("");
+  const matches = recipeData.recipes.filter(recipeMatches);
+  document.getElementById("recipes-count").textContent = `${matches.length} recipe${matches.length === 1 ? "" : "s"}`;
+  const listEl = document.getElementById("recipes-list");
+  if (!matches.length) {
+    listEl.innerHTML = `<div class="empty-state">No recipes match.<br>Try a different search or filter.</div>`;
+    return;
+  }
+  listEl.innerHTML = matches.map(recipe => {
+    const per = recipePerServing(recipe);
+    return `<button type="button" class="recipe-card" data-recipe-id="${recipe.id}">
+      <span class="recipe-emoji" aria-hidden="true">${recipe.emoji}</span>
+      <span class="recipe-card-text">
+        <span class="recipe-card-cat">${RECIPE_CATEGORY_LABELS[recipe.category]} · ${recipe.minutes} min</span>
+        <span class="recipe-card-title">${recipe.name}</span>
+        <span class="recipe-card-macros">${Math.round(per.calories)} kcal · P ${Math.round(per.protein)}g · C ${Math.round(per.carbs)}g · F ${Math.round(per.fat)}g</span>
+        <span class="recipe-tags">${recipeTagsHtml(recipe, per)}</span>
+      </span>
+      <span class="dash-card-arrow" aria-hidden="true">›</span>
+    </button>`;
+  }).join("");
+}
+
+function formatRecipeQty(qty, unit) {
+  if (unit === "g" || unit === "ml") return String(qty >= 20 ? Math.round(qty / 5) * 5 : Math.round(qty));
+  const quarters = Math.round(qty * 4) / 4;
+  if (quarters <= 0) return "¼";
+  const whole = Math.floor(quarters);
+  const frac = RECIPE_FRACTIONS[quarters - whole] || "";
+  return whole ? `${whole}${frac ? " " + frac : ""}` : frac;
+}
+
+function recipeIngredientText(ing, scale) {
+  const qty = formatRecipeQty(ing.qty * scale, ing.unit);
+  const unit = ing.unit === "g" || ing.unit === "ml" ? ing.unit : ing.unit ? " " + ing.unit : "";
+  return `<span class="recipe-ing-qty">${qty}${unit}</span> ${ing.label}`;
+}
+
+function renderRecipeDetail(recipe) {
+  const per = recipePerServing(recipe);
+  const scale = recipeServings / recipe.servings;
+  const saved = recipeIsSaved(recipe);
+  const el = document.getElementById("recipe-detail");
+  el.innerHTML = `
+    <button type="button" class="saved-folder-back" id="recipe-back-btn">‹ Recipes</button>
+    <div class="recipe-hero"><span aria-hidden="true">${recipe.emoji}</span></div>
+    <div class="recipe-detail-cat">${RECIPE_CATEGORY_LABELS[recipe.category]} · ${recipe.minutes} min · Serves ${recipe.servings}</div>
+    <h2 class="recipe-detail-title">${recipe.name}</h2>
+    <div class="recipe-tags">${recipeTagsHtml(recipe, per)}</div>
+    <div class="recipe-macro-grid" aria-label="Nutrition per serving">
+      <div class="recipe-macro"><span class="v">${Math.round(per.calories)}</span><span class="l">kcal</span></div>
+      <div class="recipe-macro"><span class="v">${Math.round(per.protein)}g</span><span class="l">Protein</span></div>
+      <div class="recipe-macro"><span class="v">${Math.round(per.carbs)}g</span><span class="l">Carbs</span></div>
+      <div class="recipe-macro"><span class="v">${Math.round(per.fat)}g</span><span class="l">Fat</span></div>
+    </div>
+    <div class="recipe-per-note">Per serving</div>
+    <div class="recipe-actions">
+      <button type="button" class="primary-btn" id="recipe-log-btn">Log 1 Serving</button>
+      <button type="button" class="primary-btn secondary" id="recipe-save-btn"${saved ? " disabled" : ""}>${saved ? "✓ In My Meals" : "Save to My Meals"}</button>
+    </div>
+    <div class="recipe-section-head">
+      <h3 class="section-heading">Ingredients</h3>
+      <div class="qa-servings-stepper recipe-stepper">
+        <button type="button" class="icon-btn" id="recipe-serv-minus" aria-label="Fewer servings">−</button>
+        <span id="recipe-serv-value">${recipeServings} serving${recipeServings === 1 ? "" : "s"}</span>
+        <button type="button" class="icon-btn" id="recipe-serv-plus" aria-label="More servings">+</button>
+      </div>
+    </div>
+    <ul class="recipe-ingredients">${recipe.ingredients.map(i => `<li>${recipeIngredientText(i, scale)}</li>`).join("")}</ul>
+    <h3 class="section-heading">Method</h3>
+    <ol class="recipe-steps">${recipe.steps.map(s => `<li>${s}</li>`).join("")}</ol>`;
+
+  el.querySelector("#recipe-back-btn").addEventListener("click", () => { recipeOpenId = null; renderRecipes(); window.scrollTo(0, 0); });
+  el.querySelector("#recipe-serv-minus").addEventListener("click", () => { recipeServings = Math.max(1, recipeServings - 1); renderRecipeDetail(recipe); });
+  el.querySelector("#recipe-serv-plus").addEventListener("click", () => { recipeServings = Math.min(12, recipeServings + 1); renderRecipeDetail(recipe); });
+  el.querySelector("#recipe-log-btn").addEventListener("click", e => {
+    addFoodEntry({
+      name: recipe.name, brand: "Recipe", image: "", serving: "1 serving",
+      calories: per.calories, protein: per.protein, carbs: per.carbs, fat: per.fat
+    });
+    updateHomeStats();
+    e.currentTarget.textContent = "✓ Logged to today";
+    e.currentTarget.classList.add("done");
+  });
+  el.querySelector("#recipe-save-btn").addEventListener("click", () => {
+    if (recipeIsSaved(recipe)) return;
+    const meals = qaGetSavedMeals();
+    meals.unshift(recipeToMeal(recipe));
+    qaSetSavedMeals(meals);
+    renderRecipeDetail(recipe);
+  });
+}
+
+// saved-meal shape matches Quick Add meals so it can be logged and edited from Saved › Meals
+function recipeToMeal(recipe) {
+  const ingredients = recipe.ingredients.map(i => {
+    const food = recipeData.foods[i.food];
+    return { name: food.name, brand: "", grams: i.grams, per100: { ...food.per100 }, servingGrams: 100,
+             servingLabel: "serving (100 g)", qty: i.grams, unit: "g" };
+  });
+  const per = recipePerServing(recipe);
+  const totals = {};
+  Object.keys(per).forEach(k => { totals[k] = per[k] * recipe.servings; });
+  return { name: recipe.name, servings: recipe.servings, ingredients, totals, perServing: per,
+           recipeId: recipe.id, createdAt: new Date().toISOString() };
+}
+
+function openRecipe(id) {
+  const recipe = recipeData.recipes.find(r => r.id === id);
+  if (!recipe) return;
+  recipeOpenId = id;
+  recipeServings = recipe.servings;
+  renderRecipes();
+  window.scrollTo(0, 0);
+}
+
+document.getElementById("recipes-btn").addEventListener("click", () => { recipeOpenId = null; showTab("recipes-screen"); });
+document.getElementById("recipes-back-btn").addEventListener("click", () => showTab("nutrition-screen"));
+document.getElementById("recipes-search").addEventListener("input", e => { recipeQuery = e.target.value; if (recipeData) renderRecipeList(); });
+document.getElementById("recipe-filters").addEventListener("click", e => {
+  const chip = e.target.closest("[data-recipe-filter]");
+  if (!chip) return;
+  recipeFilter = chip.dataset.recipeFilter;
+  renderRecipeList();
+});
+document.getElementById("recipes-list").addEventListener("click", e => {
+  const card = e.target.closest("[data-recipe-id]");
+  if (card) openRecipe(card.dataset.recipeId);
 });
 
 // ============================================================
