@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Workout Builder - Theme Preview</title>
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Workouts">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#0a0f24">
+<link id="theme-css" rel="stylesheet" href="themes/neon.css">
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js" defer></script>
+</head>
+<body>
+<div id="app">
+  <div id="theme-preview-bar">
+    <div class="tpb-title">Theme preview <span>(tap to switch)</span></div>
+    <div class="tpb-buttons"><button type="button" data-theme="current" style="--sw:#2563eb">Current</button><button type="button" data-theme="neon" style="--sw:#c6ff3d">Neon Energy</button><button type="button" data-theme="sunset" style="--sw:#ff7a3d">Sunset Gradient</button><button type="button" data-theme="coded" style="--sw:#6366f1">Colour-coded</button><button type="button" data-theme="light" style="--sw:#ff2d55">Clean Light</button></div>
+  </div>
+  <style>
+    #theme-preview-bar { flex-shrink:0; padding:8px 12px 6px; background:#000; border-bottom:1px solid #333; font-family:-apple-system,sans-serif; z-index:50; }
+    #theme-preview-bar .tpb-title { color:#fff; font-size:12px; font-weight:700; margin-bottom:6px; }
+    #theme-preview-bar .tpb-title span { color:#888; font-weight:500; }
+    #theme-preview-bar .tpb-buttons { display:flex; gap:6px; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    #theme-preview-bar button { flex-shrink:0; border:1px solid #444; background:#111; color:#ddd; border-radius:999px; padding:6px 12px; font-size:13px; font-weight:600; }
+    #theme-preview-bar button::before { content:""; display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--sw); margin-right:6px; vertical-align:middle; }
+    #theme-preview-bar button.on { background:#fff; color:#000; border-color:#fff; }
+  </style>
+
+  <header class="topbar">
+    <h1 id="topbar-title">Workout Builder</h1>
+  </header>
+
+  <!-- ============ HOME ============ -->
+  <main id="home-screen" class="screen active" aria-label="Home">
+    <section class="hero-card card">
+      <p class="hero-greeting" id="hero-greeting">Welcome back</p>
+      <p class="hero-sub">What are we doing today?</p>
+    </section>
+
+    <button type="button" class="dash-card" data-goto="setup-screen" data-presetmode="quick">
+      <span class="dash-card-icon" aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" fill="currentColor"/></svg></span>
+      <span class="dash-card-text">
+        <span class="dash-card-title">Quick Workout</span>
+        <span class="dash-card-sub">Generate a single session in seconds</span>
+      </span>
+      <span class="dash-card-arrow" aria-hidden="true">›</span>
+    </button>
+
+    <button type="button" class="dash-card" data-goto="setup-screen" data-presetmode="plan">
+      <span class="dash-card-icon" aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/><circle cx="8" cy="14.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="12" cy="14.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="16" cy="14.5" r="1.1" fill="currentColor" stroke="none"/></svg></span>
+      <span class="dash-card-text">
+        <span class="dash-card-title">Build a Plan</span>
+        <span class="dash-card-sub">Multi-week programs with smart splits</span>
+      </span>
+      <span class="dash-card-arrow" aria-hidden="true">›</span>
+    </button>
+
+    <button type="button" class="dash-card dash-card-food" data-goto="nutrition-screen">
+      <span class="dash-card-row">
+        <span class="dash-card-text">
+          <span class="dash-card-title">Food Diary</span>
+          <span class="dash-card-sub" id="home-cal-sub">0 / 2000 kcal today</span>
+        </span>
+        <span class="dash-card-arrow" aria-hidden="true">›</span>
+      </span>
+      <span class="home-ring-row">
+        <span class="ring-mini" id="home-ring-protein" style="--pct:0" data-color="protein"><span id="home-ring-protein-text">0g</span></span>
+        <span class="ring-mini" id="home-ring-carbs" style="--pct:0" data-color="carbs"><span id="home-ring-carbs-text">0g</span></span>
+        <span class="ring-mini" id="home-ring-fat" style="--pct:0" data-color="fat"><span id="home-ring-fat-text">0g</span></span>
+      </span>
+    </button>
+
+    <button type="button" class="action-tile-mini" data-goto="nutrition-screen" data-openscan="1">
+      <span aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8a2 2 0 0 1 2-2h1.5l1-2h7l1 2H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8z"/><circle cx="12" cy="13" r="3.5"/></svg></span> Scan Food
+    </button>
+
+    <button type="button" class="dash-card" data-goto="saved-screen">
+      <span class="dash-card-icon" aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.5 6.6L12 17l-5.9 3.5 1.5-6.6-5-4.6 6.6-.6L12 2.5z"/></svg></span>
+      <span class="dash-card-text">
+        <span class="dash-card-title">Saved</span>
+        <span class="dash-card-sub" id="home-saved-sub">0 workouts saved</span>
+      </span>
+      <span class="dash-card-arrow" aria-hidden="true">›</span>
+    </button>
+  </main>
+
+  <!-- ============ BUILD / SETUP ============ -->
+  <main id="setup-screen" class="screen" aria-label="Build a workout">
+    <form id="setup-form">
+
+      <section class="card">
+        <div class="mode-toggle" data-field="mode" role="tablist" aria-label="Workout mode">
+          <button type="button" class="mode-btn selected" data-value="quick" role="tab" aria-selected="true">Quick Workout</button>
+          <button type="button" class="mode-btn" data-value="plan" role="tab" aria-selected="false">Multi-Week Plan</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 id="location-label">Where are you training?</h2>
+        <div class="chip-group" data-field="location" role="group" aria-labelledby="location-label">
+          <button type="button" class="chip selected" data-value="home">Home (bodyweight/bands/dumbbells)</button>
+          <button type="button" class="chip" data-value="gym">Gym (barbell/cable/bench too)</button>
+        </div>
+      </section>
+
+      <section class="card plan-only" hidden>
+        <h2 id="weeks-label">Plan Length</h2>
+        <div class="chip-group" data-field="weeks" role="group" aria-labelledby="weeks-label">
+          <button type="button" class="chip" data-value="1">1 week</button>
+          <button type="button" class="chip selected" data-value="2">2 weeks</button>
+          <button type="button" class="chip" data-value="3">3 weeks</button>
+          <button type="button" class="chip" data-value="4">4 weeks</button>
+        </div>
+      </section>
+
+      <section class="card plan-only" hidden>
+        <h2 id="days-label">Days per week</h2>
+        <div class="chip-group" data-field="daysPerWeek" role="group" aria-labelledby="days-label">
+          <button type="button" class="chip" data-value="1">1</button>
+          <button type="button" class="chip" data-value="2">2</button>
+          <button type="button" class="chip" data-value="3">3</button>
+          <button type="button" class="chip selected" data-value="4">4</button>
+          <button type="button" class="chip" data-value="5">5</button>
+          <button type="button" class="chip" data-value="6">6</button>
+          <button type="button" class="chip" data-value="7">7</button>
+        </div>
+      </section>
+
+      <section class="card quick-only">
+        <h2 id="goal-label">What are you trying to achieve?</h2>
+        <div class="chip-group" data-field="goal" role="group" aria-labelledby="goal-label">
+          <button type="button" class="chip" data-value="strength">Strength</button>
+          <button type="button" class="chip" data-value="cardio">Cardio</button>
+          <button type="button" class="chip" data-value="fatloss">Fat Loss</button>
+          <button type="button" class="chip" data-value="mobility">Mobility</button>
+          <button type="button" class="chip selected" data-value="general">General Fitness</button>
+        </div>
+      </section>
+
+      <section class="card plan-only" hidden>
+        <p class="plan-note">Each day in your plan will be a different workout type (strength, cardio, fat loss, mobility) for balanced, varied training.</p>
+      </section>
+
+      <section class="card">
+        <h2 id="goal-prompt-label">Anything specific you want to achieve?</h2>
+        <textarea id="goal-prompt-input" class="goal-prompt-input" rows="2" placeholder="e.g. Build lean muscle and get stronger, less cardio, focus on upper body &amp; back" aria-labelledby="goal-prompt-label"></textarea>
+        <p class="goal-prompt-hint" id="goal-prompt-hint"></p>
+      </section>
+
+      <section class="card">
+        <h2 id="duration-label">Duration</h2>
+        <div class="chip-group" data-field="duration" role="group" aria-labelledby="duration-label">
+          <button type="button" class="chip" data-value="10">10 min</button>
+          <button type="button" class="chip" data-value="20">20 min</button>
+          <button type="button" class="chip selected" data-value="30">30 min</button>
+          <button type="button" class="chip" data-value="45">45 min</button>
+          <button type="button" class="chip" data-value="60">60 min</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 id="diff-label">Difficulty</h2>
+        <div class="chip-group" data-field="difficulty" role="group" aria-labelledby="diff-label">
+          <button type="button" class="chip selected" data-value="beginner">Beginner</button>
+          <button type="button" class="chip" data-value="intermediate">Intermediate</button>
+          <button type="button" class="chip" data-value="advanced">Advanced</button>
+        </div>
+      </section>
+
+      <button type="submit" id="generate-btn" class="primary-btn">Generate Workout</button>
+    </form>
+  </main>
+
+  <main id="workout-screen" class="screen" aria-label="Your workout">
+    <div class="workout-header">
+      <button id="back-btn" class="icon-btn" aria-label="Back to build">←</button>
+      <h2 id="workout-title">Your Workout</h2>
+      <button id="regen-btn" class="icon-btn" aria-label="Regenerate workout">⟳</button>
+    </div>
+    <div id="workout-list"></div>
+    <button id="save-btn" class="primary-btn secondary">Save Workout</button>
+  </main>
+
+  <main id="plan-screen" class="screen" aria-label="Your plan">
+    <div class="workout-header">
+      <button id="plan-back-btn" class="icon-btn" aria-label="Back to build">←</button>
+      <h2 id="plan-title">Your Plan</h2>
+      <span class="icon-btn-spacer" aria-hidden="true"></span>
+    </div>
+    <div id="plan-week-tabs" class="week-tabs" role="tablist" aria-label="Plan weeks"></div>
+    <div id="plan-day-list"></div>
+    <button id="save-plan-btn" class="primary-btn secondary">Save Plan</button>
+  </main>
+
+  <!-- ============ NUTRITION ============ -->
+  <main id="nutrition-screen" class="screen" aria-label="Nutrition">
+    <div class="workout-header">
+      <h2>Nutrition</h2>
+      <button type="button" id="cal-goal-btn" class="icon-btn" aria-label="Set calorie goal">⚙</button>
+    </div>
+
+    <div id="date-strip" class="date-strip" role="tablist" aria-label="Select day"></div>
+
+    <section class="card stats-card" aria-label="Day's food log totals">
+      <div class="totals-header">
+        <h2 id="day-totals-heading">Totals</h2>
+        <span class="goal-type-badge" id="goal-type-badge">Maintain</span>
+      </div>
+
+      <div class="cal-progress-wrap">
+        <div class="cal-progress-track">
+          <div id="cal-progress-fill" class="cal-progress-fill"></div>
+        </div>
+        <div class="cal-progress-text">
+          <span id="n-cal">0</span> / <span id="n-cal-goal">2000</span> kcal
+        </div>
+      </div>
+
+      <div class="macro-rings">
+        <div class="macro-ring" id="ring-protein" data-color="protein" style="--pct:0">
+          <span class="ring-label">Protein</span>
+          <span class="ring-value" id="n-protein-text">0/150g</span>
+        </div>
+        <div class="macro-ring" id="ring-carbs" data-color="carbs" style="--pct:0">
+          <span class="ring-label">Carbs</span>
+          <span class="ring-value" id="n-carbs-text">0/200g</span>
+        </div>
+        <div class="macro-ring" id="ring-fat" data-color="fat" style="--pct:0">
+          <span class="ring-label">Fat</span>
+          <span class="ring-value" id="n-fat-text">0/65g</span>
+        </div>
+      </div>
+    </section>
+
+    <button type="button" id="quickadd-btn" class="primary-btn"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/></svg> Quick Add Ingredient</button>
+    <button type="button" id="scan-btn" class="primary-btn secondary"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8a2 2 0 0 1 2-2h1.5l1-2h7l1 2H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8z"/><circle cx="12" cy="13" r="3.5"/></svg> Scan Barcode</button>
+
+    <form id="manual-barcode-form" class="manual-barcode">
+      <input type="text" id="manual-barcode-input" inputmode="numeric" placeholder="Or enter barcode number" aria-label="Enter barcode number manually">
+      <button type="submit" class="icon-btn" aria-label="Look up barcode">→</button>
+    </form>
+
+    <div id="scan-result"></div>
+
+    <h2 class="section-heading" id="food-log-heading">Logged</h2>
+    <div id="food-log-list"></div>
+  </main>
+
+  <!-- nutrition goal modal -->
+  <div id="goal-modal" class="goal-modal" hidden role="dialog" aria-modal="true" aria-label="Set nutrition goals">
+    <div class="goal-modal-card goal-modal-card-wide">
+      <h2>Nutrition Goals</h2>
+
+      <div class="mode-toggle goal-mode-toggle" data-field="goalmode" role="tablist" aria-label="Goal setup mode">
+        <button type="button" class="mode-btn selected" data-value="calculate" role="tab" aria-selected="true">Calculate for me</button>
+        <button type="button" class="mode-btn" data-value="manual" role="tab" aria-selected="false">Enter manually</button>
+      </div>
+
+      <div id="goal-calc-fields">
+        <h3 class="goal-field-label">Goal</h3>
+        <div class="chip-group" data-field="nutriGoal">
+          <button type="button" class="chip" data-value="lose">Lose Fat</button>
+          <button type="button" class="chip selected" data-value="maintain">Maintain</button>
+          <button type="button" class="chip" data-value="gain">Build Muscle</button>
+        </div>
+
+        <h3 class="goal-field-label">Sex</h3>
+        <div class="chip-group" data-field="sex">
+          <button type="button" class="chip selected" data-value="male">Male</button>
+          <button type="button" class="chip" data-value="female">Female</button>
+        </div>
+
+        <div class="goal-input-grid">
+          <label>Age<input type="number" id="goal-age" inputmode="numeric" placeholder="30"></label>
+          <label>Weight (kg)<input type="number" id="goal-weight" inputmode="decimal" placeholder="75"></label>
+          <label>Height (cm)<input type="number" id="goal-height" inputmode="numeric" placeholder="175"></label>
+        </div>
+
+        <h3 class="goal-field-label">Activity level</h3>
+        <div class="chip-group" data-field="activity">
+          <button type="button" class="chip" data-value="1.2">Sedentary</button>
+          <button type="button" class="chip selected" data-value="1.375">Light</button>
+          <button type="button" class="chip" data-value="1.55">Moderate</button>
+          <button type="button" class="chip" data-value="1.725">Active</button>
+          <button type="button" class="chip" data-value="1.9">Very Active</button>
+        </div>
+
+        <div class="goal-preview" id="goal-preview"></div>
+      </div>
+
+      <div id="goal-manual-fields" hidden>
+        <label class="goal-manual-label">Calories (kcal)<input type="number" id="manual-cal" inputmode="numeric" placeholder="2000"></label>
+        <label class="goal-manual-label">Protein (g)<input type="number" id="manual-protein" inputmode="numeric" placeholder="150"></label>
+        <label class="goal-manual-label">Carbs (g)<input type="number" id="manual-carbs" inputmode="numeric" placeholder="200"></label>
+        <label class="goal-manual-label">Fat (g)<input type="number" id="manual-fat" inputmode="numeric" placeholder="65"></label>
+      </div>
+
+      <div class="goal-modal-actions">
+        <button type="button" id="goal-cancel-btn" class="primary-btn secondary">Cancel</button>
+        <button type="button" id="goal-save-btn" class="primary-btn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- barcode scanner modal -->
+  <div id="scanner-modal" class="scanner-modal" hidden role="dialog" aria-modal="true" aria-label="Barcode scanner">
+    <div class="scanner-frame">
+      <video id="scanner-video" autoplay playsinline muted></video>
+      <div class="scanner-guide" aria-hidden="true"></div>
+    </div>
+    <p id="scanner-status" class="scanner-status">Point your camera at a barcode</p>
+    <button type="button" id="scanner-close-btn" class="primary-btn secondary">Cancel</button>
+  </div>
+
+
+  <!-- Quick Add ingredient search & meal builder modal -->
+  <div id="quickadd-modal" class="quickadd-modal" hidden role="dialog" aria-modal="true" aria-label="Quick add ingredients">
+    <div class="quickadd-card">
+
+      <div id="qa-step-search" class="qa-step">
+        <div class="qa-header">
+          <h2 id="qa-title">Quick Add</h2>
+          <button type="button" id="qa-close-btn" class="icon-btn" aria-label="Close">✕</button>
+        </div>
+
+        <div class="qa-search-wrap">
+          <span class="qa-search-icon" aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/></svg></span>
+          <input type="text" id="qa-search-input" placeholder="Search Ingredient Name" autocomplete="off">
+        </div>
+        <div id="qa-search-results" class="qa-search-results" hidden></div>
+
+        <h3 class="qa-subheading" id="qa-ingredients-heading">Ingredients (0)</h3>
+        <div id="qa-ingredients-list" class="qa-ingredients-list">
+          <div class="empty-state">Search above and tap a result to add it.</div>
+        </div>
+
+        <div class="qa-total-row" id="qa-total-row" hidden>
+          <span>Total Nutrition</span>
+          <span id="qa-total-text">0 kcal · P 0g · C 0g · F 0g</span>
+        </div>
+
+        <button type="button" id="qa-next-btn" class="primary-btn" disabled>Next</button>
+      </div>
+
+      <div id="qa-step-finalize" class="qa-step" hidden>
+        <div class="qa-header">
+          <button type="button" id="qa-back-btn" class="icon-btn" aria-label="Back">←</button>
+          <h2>Name This Meal</h2>
+          <button type="button" id="qa-close-btn-2" class="icon-btn" aria-label="Close">✕</button>
+        </div>
+
+        <input type="text" id="qa-meal-name" class="qa-meal-name-input" placeholder="Meal name (e.g. Cheese Slices)">
+
+        <h3 class="qa-subheading">Ingredients</h3>
+        <div id="qa-recap-list" class="qa-recap-list"></div>
+
+        <div class="qa-total-row">
+          <span>Total Nutrition</span>
+          <span id="qa-total-text-2">0 kcal · P 0g · C 0g · F 0g</span>
+        </div>
+
+        <h3 class="qa-subheading">How many servings does this meal make?</h3>
+        <div class="qa-servings-stepper">
+          <button type="button" id="qa-servings-minus" class="icon-btn" aria-label="Decrease servings">−</button>
+          <span id="qa-servings-value">1.00</span>
+          <button type="button" id="qa-servings-plus" class="icon-btn" aria-label="Increase servings">+</button>
+        </div>
+        <div class="qa-per-serving" id="qa-per-serving-text"></div>
+
+        <div class="qa-save-actions">
+          <button type="button" id="qa-save-only-btn" class="primary-btn secondary">Save This Meal</button>
+          <button type="button" id="qa-log-save-btn" class="primary-btn">Log and Save This Meal</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- unit picker popup (for ingredient qty units) -->
+  <div id="qa-unit-popup" class="qa-unit-popup" hidden role="dialog" aria-modal="true" aria-label="Choose unit">
+    <div class="qa-unit-popup-card">
+      <h3>Choose a unit</h3>
+      <div id="qa-unit-options" class="qa-unit-options"></div>
+      <button type="button" id="qa-unit-cancel-btn" class="primary-btn secondary">Cancel</button>
+    </div>
+  </div>
+
+  <main id="saved-screen" class="screen" aria-label="Saved items">
+    <div class="workout-header">
+      <h2>Saved</h2>
+    </div>
+    <h2 class="section-heading">Workouts & Plans</h2>
+    <div id="saved-list"></div>
+    <h2 class="section-heading">Saved Meals</h2>
+    <div id="saved-meals-list"></div>
+  </main>
+
+  <nav class="tabbar" aria-label="Main navigation">
+    <button class="tab-btn active" data-tab="home-screen" aria-label="Home"><span aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11.5 12 4l8 7.5"/><path d="M6 10v9a1 1 0 0 0 1 1h4v-6h2v6h4a1 1 0 0 0 1-1v-9"/></svg></span><span>Home</span></button>
+    <button class="tab-btn" data-tab="setup-screen" aria-label="Build"><span aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 7v10M4 9v6M17.5 7v10M20 9v6M8.5 12h7"/></svg></span><span>Build</span></button>
+    <button class="tab-btn" data-tab="nutrition-screen" aria-label="Nutrition"><span aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7c-3.5-2-7.5 0-7.5 5 0 5 3.8 9.5 7 9.5s7.5-4.5 7.5-9.5c0-5.1-4-7-7-5z"/><path d="M12 7c0-2 1-4 3-5"/></svg></span><span>Food</span></button>
+    <button class="tab-btn" data-tab="saved-screen" aria-label="Saved"><span aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5l2.9 6.2 6.6.6-5 4.6 1.5 6.6L12 17l-5.9 3.5 1.5-6.6-5-4.6 6.6-.6L12 2.5z"/></svg></span><span>Saved</span></button>
+  </nav>
+
+</div>
+<script src="app.js?v=21"></script>
+
+<script>
+(function () {
+  var STATUS = {'neon': '#050505', 'sunset': '#1a0b2e', 'coded': '#0b0d12', 'light': '#f4f5f9', 'current': '#0a0f24'};
+  function apply(theme) {
+    document.getElementById("theme-css").href = theme === "current" ? "style.css" : "themes/" + theme + ".css";
+    document.querySelector('meta[name="theme-color"]').setAttribute("content", STATUS[theme]);
+    document.querySelectorAll("#theme-preview-bar button").forEach(function (b) { b.classList.toggle("on", b.dataset.theme === theme); });
+    try { localStorage.setItem("previewTheme", theme); } catch (e) {}
+  }
+  document.querySelectorAll("#theme-preview-bar button").forEach(function (b) {
+    b.addEventListener("click", function () { apply(b.dataset.theme); });
+  });
+  var fromUrl = new URLSearchParams(location.search).get("theme");
+  var saved = null; try { saved = localStorage.getItem("previewTheme"); } catch (e) {}
+  apply(STATUS[fromUrl] ? fromUrl : STATUS[saved] ? saved : "neon");
+  var screen = new URLSearchParams(location.search).get("screen");
+  if (screen && typeof showTab === "function") showTab(screen);
+})();
+</script>
+</body>
+</html>
