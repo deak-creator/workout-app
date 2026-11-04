@@ -1456,3 +1456,7 @@ html, body { background: radial-gradient(ellipse at top, #eef0f5 0%, #f3f4f8 60%
 .saved-folder-back { background: none; border: none; padding: 4px 0; font-family: inherit; font-size: 15px; font-weight: 700; color: #ff2d55; cursor: pointer; }
 #saved-folder-view .section-heading { margin-top: 6px; }
 .saved-folders[hidden], #saved-folder-view[hidden], #saved-list[hidden], #saved-meals-list[hidden] { display: none; }
+
+/* Quick Add: log without saving (v29) */
+.qa-log-only-btn { background: none; border: none; padding: 10px; font-family: inherit; font-size: 15px; font-weight: 700; color: #ff2d55; cursor: pointer; }
+.qa-log-only-btn:active { opacity: 0.6; }
