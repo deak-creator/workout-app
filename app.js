@@ -173,7 +173,8 @@ const DAY_TYPE_LABELS = {
 
 // Rotation order chosen so strength days aren't back-to-back and every
 // plan gets a healthy mix no matter how many days per week is picked.
-const ROTATION_ORDER = ["strength", "cardio", "fatloss", "strength", "mobility", "cardio", "strength"];
+// Cardio is its own section (v37), so plan days rotate strength / fat loss / mobility only.
+const ROTATION_ORDER = ["strength", "fatloss", "strength", "mobility", "strength", "fatloss", "strength"];
 
 // ---------- free-text goal prompt parsing ----------
 // Reads the "Anything specific you want to achieve?" box and turns it into a
@@ -235,7 +236,7 @@ function parseGoalPrompt(text) {
 // "build muscle" signal yields more strength days and fewer/no cardio days,
 // instead of always forcing the fixed strength/cardio/fatloss/mobility cycle.
 function buildBiasedRotation(daysPerWeek, promptBias) {
-  const baseWeights = { strength: 3, cardio: 2, fatloss: 2, mobility: 1 };
+  const baseWeights = { strength: 3, fatloss: 2, mobility: 1 }; // no cardio days: cardio has its own section
   const weights = { ...baseWeights };
   Object.keys(weights).forEach(k => {
     weights[k] = Math.max(0.2, weights[k] + (promptBias.typeBias[k] || 0));
@@ -322,11 +323,11 @@ function getSplitTemplate(daysPerWeek, promptBias) {
 
 function getDayTypeTemplate(daysPerWeek, promptBias) {
   const bias = promptBias || parseGoalPrompt("");
-  const hasBias = Object.values(bias.typeBias).some(v => v !== 0);
+  const hasBias = ["strength", "fatloss", "mobility"].some(k => bias.typeBias[k]);
 
   if (daysPerWeek >= 7) {
     // 7 days: six varied sessions + one rest/recovery day
-    const order = hasBias ? buildBiasedRotation(6, bias) : ["strength", "cardio", "fatloss", "strength", "mobility", "cardio"];
+    const order = hasBias ? buildBiasedRotation(6, bias) : ["strength", "fatloss", "strength", "mobility", "strength", "fatloss"];
     const days = order.map(dayGoal => ({ label: DAY_TYPE_LABELS[dayGoal], dayGoal }));
     days.push({ label: "Recovery", dayGoal: "mobility", isRest: true });
     return days;
@@ -1549,13 +1550,14 @@ function renderRecovery() {
   histEl.innerHTML = "";
   history.slice(0, 20).forEach(h => {
     const sets = h.exercises.reduce((n, ex) => n + ex.sets.length, 0);
+    const cardioSub = h.cardio ? `${h.cardio.minutes} min cardio · ~${h.cardio.kcal} kcal${h.cardio.distanceKm ? ` · ${h.cardio.distanceKm} km` : ""}` : null;
     const volume = h.exercises.reduce((v, ex) => v + ex.sets.reduce((a, s) => a + (parseFloat(s.reps) || 0) * (parseFloat(s.weight) || 0), 0), 0);
     const item = document.createElement("div");
     item.className = "saved-item rec-history-item";
     item.innerHTML = `
       <div>
         <div class="title">${h.title}</div>
-        <div class="sub">${new Date(h.finishedAt).toLocaleDateString()} · ${h.exercises.length} exercises · ${sets} sets${volume ? ` · ${Math.round(volume).toLocaleString()} kg` : ""}</div>
+        <div class="sub">${new Date(h.finishedAt).toLocaleDateString()} · ${cardioSub || `${h.exercises.length} exercises · ${sets} sets${volume ? ` · ${Math.round(volume).toLocaleString()} kg` : ""}`}</div>
       </div>
       <button type="button" class="saved-delete-btn" aria-label="Delete workout">Delete</button>`;
     item.querySelector("button").addEventListener("click", () => {
@@ -1735,6 +1737,12 @@ function updateHomeStats() {
       : `${fresh} fresh muscle groups · last workout ${days === 0 ? "today" : days === 1 ? "yesterday" : days + " days ago"}`;
   }
 
+  const cardioSubEl = document.getElementById("home-cardio-sub");
+  if (cardioSubEl) {
+    const wk = cardioWeekStats();
+    cardioSubEl.textContent = wk.sessions ? `${wk.minutes} / ${CARDIO_WEEKLY_TARGET_MIN} min this week · ~${wk.kcal} kcal` : "Runs, rides, rows & HIIT, tailored to you";
+  }
+
   setMiniRing("protein", totals.protein, targets.protein);
   setMiniRing("carbs", totals.carbs, targets.carbs);
   setMiniRing("fat", totals.fat, targets.fat);
@@ -1776,7 +1784,8 @@ const titleByScreen = {
   "recovery-screen": "Recovery",
   "exercise-screen": "Exercise",
   "recipes-screen": "Recipes",
-  "mealplan-screen": "Meal Plan"
+  "mealplan-screen": "Meal Plan",
+  "cardio-screen": "Cardio"
 };
 const _origShowTab = showTab;
 showTab = function (id) {
@@ -1790,8 +1799,9 @@ showTab = function (id) {
   if (id === "recovery-screen") renderRecovery();
   if (id === "recipes-screen") renderRecipes();
   if (id === "mealplan-screen") renderMealPlan();
+  if (id === "cardio-screen") renderCardio();
   // sync bottom tabbar highlight for screens not directly in tabbar (workout/plan detail views)
-  const tabMap = { "setup-screen": "setup-screen", "workout-screen": "setup-screen", "plan-screen": "setup-screen", "exercise-screen": "setup-screen", "recipes-screen": "nutrition-screen", "mealplan-screen": "nutrition-screen" };
+  const tabMap = { "setup-screen": "setup-screen", "workout-screen": "setup-screen", "plan-screen": "setup-screen", "exercise-screen": "setup-screen", "recipes-screen": "nutrition-screen", "mealplan-screen": "nutrition-screen", "cardio-screen": "home-screen" };
   const activeTabId = tabMap[id] || id;
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === activeTabId));
 };
@@ -3468,3 +3478,570 @@ document.getElementById("mealplan-body").addEventListener("click", e => {
 // init
 // ============================================================
 updateHomeStats();
+
+// ============================================================
+// CARDIO (v37) — its own section, kept out of strength training sessions.
+// Tailored by type, where, skill level, intensity, goal and duration;
+// builds a warm-up / main set / cool-down session with a step timer.
+// ============================================================
+const CARDIO_PREFS_KEY = "cardioPrefs";
+const CARDIO_WEEKLY_TARGET_MIN = 150; // Australian guideline: 150–300 min moderate activity a week
+
+// met = [easy, moderate, hard, all-out] MET values (Compendium of Physical Activities, rounded)
+const CARDIO_TYPES = {
+  run: { label: "Run", met: [7, 9.8, 11.5, 14], muscles: ["quads", "hamstrings", "calves", "glutes"], where: ["outdoor", "treadmill"], impact: true },
+  walk: { label: "Walk", met: [3.5, 4.8, 6.5, 7.5], muscles: ["quads", "calves", "glutes"], where: ["outdoor", "treadmill"] },
+  cycle: { label: "Cycle", met: [5.5, 7.5, 10, 12], muscles: ["quads", "glutes", "calves"], where: ["outdoor", "bike"] },
+  row: { label: "Row", met: [4.8, 7, 8.5, 12], muscles: ["back", "quads", "biceps", "glutes"] },
+  hiit: { label: "HIIT (no equipment)", met: [5, 8, 10, 12], muscles: ["full body"] },
+  rope: { label: "Jump Rope", met: [8.8, 11, 12.3, 13], muscles: ["calves", "shoulders", "quads"], impact: true },
+  swim: { label: "Swim", met: [5.8, 7, 9.8, 11], muscles: ["back", "shoulders", "chest"] },
+  elliptical: { label: "Elliptical", met: [4.6, 5.8, 7.5, 9], muscles: ["quads", "glutes"] },
+  stairs: { label: "Stair Climber", met: [4, 8.8, 9.5, 11], muscles: ["quads", "glutes", "calves"] }
+};
+const CARDIO_WHERE_LABELS = { outdoor: "Outdoors", treadmill: "Treadmill", bike: "Stationary bike" };
+const CARDIO_LEVELS = {
+  new: { label: "Beginner", hint: "New to cardio, or coming back after a break" },
+  some: { label: "Intermediate", hint: "You do some cardio most months" },
+  fit: { label: "Advanced", hint: "You train cardio most weeks" },
+  athlete: { label: "Athlete", hint: "You race or train hard regularly" }
+};
+const CARDIO_LEVEL_INDEX = { new: 0, some: 1, fit: 2, athlete: 3 };
+const CARDIO_INTENSITIES = { easy: "Easy", moderate: "Moderate", hard: "Hard" };
+const CARDIO_INTENSITY_SHIFT = { easy: -1, moderate: 0, hard: 1 };
+const CARDIO_GOALS = {
+  fatburn: { label: "Fat Burn", hint: "Steady effort you can hold for a long time" },
+  endurance: { label: "Endurance", hint: "Longer efforts so you can go further" },
+  speed: { label: "Speed & Power", hint: "Short, fast intervals with recovery between" },
+  heart: { label: "Heart Health", hint: "Easy–moderate pace with short pick-ups" }
+};
+const CARDIO_DURATIONS = [10, 15, 20, 30, 45, 60];
+const CARDIO_DEFAULTS = { type: "run", where: "outdoor", level: "some", intensity: "moderate", goal: "fatburn", minutes: 30 };
+
+// HIIT moves by skill level (low impact for beginners)
+const HIIT_MOVES = [
+  ["March on the Spot", "Step Jacks", "Bodyweight Squats", "Standing Knee Drives", "Step-Back Lunges", "Shadow Boxing"],
+  ["Jumping Jacks", "High Knees", "Mountain Climbers", "Skaters", "Butt Kicks", "Squat to Calf Raise"],
+  ["Burpees", "Jump Squats", "Mountain Climbers", "Skaters", "Plank Jacks", "High Knees"],
+  ["Burpees", "Tuck Jumps", "Jump Lunges", "Sprint on the Spot", "Plank Jacks", "Skaters"]
+];
+
+function getCardioPrefs() {
+  try { return { ...CARDIO_DEFAULTS, ...JSON.parse(localStorage.getItem(CARDIO_PREFS_KEY) || "{}") }; }
+  catch (e) { return { ...CARDIO_DEFAULTS }; }
+}
+function setCardioPrefs(p) { localStorage.setItem(CARDIO_PREFS_KEY, JSON.stringify(p)); }
+
+function cardioBodyWeight() {
+  const p = getNutritionTargets().profile;
+  return p && p.weightKg > 0 ? Number(p.weightKg) : 75;
+}
+
+// MET for a given effort (RPE 1-10) on a cardio type
+function cardioMet(type, rpe) {
+  const met = (CARDIO_TYPES[type] || CARDIO_TYPES.run).met;
+  if (rpe <= 2) return 2.5;
+  if (rpe <= 3) return Math.min(met[0], 4);
+  if (rpe <= 5) return met[0];
+  if (rpe <= 6) return met[1];
+  if (rpe <= 8) return met[2];
+  return met[3];
+}
+function cardioKcal(type, rpe, seconds, kg = cardioBodyWeight()) {
+  return cardioMet(type, rpe) * kg * seconds / 3600;
+}
+// Typical effort for a whole session of a given intensity (used for quick logs)
+const CARDIO_INTENSITY_RPE = { easy: 4, moderate: 6, hard: 7.5 };
+
+// Effort (RPE) → heart-rate zone
+const HR_ZONES = [[50, 60], [60, 70], [70, 80], [80, 90], [90, 100]];
+function cardioZone(rpe) { return rpe <= 3 ? 1 : rpe <= 5 ? 2 : rpe <= 6 ? 3 : rpe <= 8 ? 4 : 5; }
+function cardioZoneText(rpe) {
+  const z = cardioZone(rpe);
+  const p = getNutritionTargets().profile;
+  const age = p && p.age > 0 ? Number(p.age) : null;
+  if (!age) return `Zone ${z}`;
+  const max = 220 - age;
+  const [lo, hi] = HR_ZONES[z - 1];
+  return `Zone ${z} · ${Math.round(max * lo / 100)}–${Math.round(max * hi / 100)} bpm`;
+}
+const RPE_WORDS = { 1: "Very easy", 2: "Very easy", 3: "Easy", 4: "Easy", 5: "Moderate", 6: "Moderate", 7: "Hard", 8: "Hard", 9: "Very hard", 10: "All out" };
+
+// What to actually do at a given effort, per cardio type
+function cardioCue(type, rpe, where, level) {
+  const li = CARDIO_LEVEL_INDEX[level] ?? 1;
+  const r = Math.round(rpe);
+  if (type === "run") {
+    const cue = r <= 3 ? "Walk briskly to recover" : r <= 4 ? "Very easy jog" : r <= 5 ? "Easy jog — you could hold a chat" : r <= 6 ? "Comfortable steady run" : r <= 7 ? "Strong pace — a few words at a time" : r <= 8 ? "Hard — about 5K race pace" : "Sprint — fast but in control";
+    if (where !== "treadmill") return cue;
+    const base = [7, 8.5, 9.5, 11][li];
+    const speed = r <= 3 ? 5.5 : base + ({ 4: -1, 5: 0, 6: 1, 7: 2, 8: 3 }[r] ?? 4.5);
+    return `${cue} · ~${speed.toFixed(1)} km/h`;
+  }
+  if (type === "walk") {
+    const cue = r <= 3 ? "Easy stroll" : r <= 4 ? "Steady walk" : r <= 5 ? "Brisk walk — slightly out of breath" : r <= 6 ? "Fast walk, pump your arms" : where === "treadmill" ? "Fast walk on a steep incline" : "Power walk uphill or up stairs";
+    if (where !== "treadmill") return cue;
+    const speed = [4.5, 5, 5.5, 6][li] + (r >= 5 ? 0.5 : 0);
+    const incline = { 3: 1, 4: 2, 5: 4, 6: 6, 7: 8, 8: 10 }[r] ?? (r < 3 ? 0 : 12);
+    return `${cue} · ~${speed.toFixed(1)} km/h, ${incline}% incline`;
+  }
+  if (type === "cycle") {
+    if (r <= 3) return "Easy spin, light resistance (~80 rpm)";
+    if (r <= 5) return "Steady pedalling, medium resistance (~85 rpm)";
+    if (r <= 6) return "Comfortably hard — add a little resistance";
+    if (r <= 8) return where === "outdoor" ? "Hard effort — big gear or a hill" : "Hard effort — heavy resistance, 80–90 rpm";
+    return "Sprint — fast cadence (100+ rpm)";
+  }
+  if (type === "row") {
+    if (r <= 3) return "Easy rowing, 18–20 strokes/min";
+    if (r <= 5) return "Steady, 20–22 strokes/min — push with the legs first";
+    if (r <= 6) return "Firm drive, 22–24 strokes/min";
+    if (r <= 8) return "Strong, 24–28 strokes/min";
+    return "Hard piece, 28–32 strokes/min";
+  }
+  if (type === "rope") {
+    if (r <= 3) return "Rest — walk around and shake out";
+    if (r <= 5) return "Basic bounce, relaxed";
+    if (r <= 6) return "Alternate-foot step";
+    if (r <= 8) return "Fast singles";
+    return li >= 2 ? "Double-unders, or your fastest singles" : "Fastest singles you can hold";
+  }
+  if (type === "swim") {
+    if (r <= 3) return "Easy laps — any stroke or a kickboard";
+    if (r <= 5) return "Steady freestyle, long smooth strokes";
+    if (r <= 6) return "Steady freestyle, a touch quicker";
+    if (r <= 8) return "Strong pace — breathe every 2–3 strokes";
+    return "Fast laps — sprint, then ease off";
+  }
+  if (type === "elliptical") {
+    if (r <= 3) return "Easy pace, low resistance";
+    if (r <= 5) return "Steady stride, medium resistance";
+    if (r <= 8) return "Raise resistance and drive with your legs";
+    return "Max effort — high resistance, fast stride";
+  }
+  if (type === "stairs") {
+    if (r <= 3) return "Slow climb, level 3–4";
+    if (r <= 5) return "Steady climb, level 5–7";
+    if (r <= 8) return "Strong climb, level 8–10 — don't lean on the rails";
+    return "Hard climb, level 11+";
+  }
+  if (type === "hiit") return r <= 3 ? "Rest — catch your breath" : r <= 5 ? "Easy moves — march, step jacks, arm circles" : "Go hard — good form first";
+  return r <= 3 ? "Rest — catch your breath" : "Keep moving";
+}
+// Cue for a session step: warm-ups and cool-downs get their own wording
+function cardioStepCue(pt, p) {
+  if (pt.kind === "warm") return `Start easy and build up · ${cardioCue(p.type, 4, p.where, p.level)}`;
+  if (pt.kind === "cool") return `Slow right down, then stretch · ${cardioCue(p.type, 4, p.where, p.level).replace(/^Very easy jog/, "Easy jog or walk")}`;
+  return cardioCue(p.type, pt.rpe, p.where, p.level);
+}
+
+function shuffled(list) {
+  const a = list.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+const round5 = s => Math.max(5, Math.round(s / 5) * 5);
+
+// Build a session. Returns { params, blocks:[{title, reps, parts:[{label,sec,rpe,kind}]}], steps, totalSec, kcal }
+function buildCardioSession(params) {
+  const p = { ...CARDIO_DEFAULTS, ...params };
+  const type = CARDIO_TYPES[p.type] ? p.type : "run";
+  const li = CARDIO_LEVEL_INDEX[p.level] ?? 1;
+  const is = CARDIO_INTENSITY_SHIFT[p.intensity] ?? 0;
+  const total = Math.max(5, Math.round(p.minutes || 30)) * 60;
+  const warm = Math.min(8, Math.max(3, Math.round(p.minutes * 0.15))) * 60;
+  const cool = Math.min(5, Math.max(2, Math.round(p.minutes * 0.1))) * 60;
+  let main = total - warm - cool;
+  const blocks = [];
+  const part = (label, sec, rpe, kind) => ({ label, sec, rpe, kind });
+  blocks.push({ title: "Warm-up", reps: 1, parts: [part("Warm-up", warm, 3, "warm")] });
+
+  // fits a repeated work/recover pair into the main time; returns leftover seconds
+  const intervals = (title, workSec, workRpe, restSec, restRpe, workLabel, restLabel, maxReps = 99) => {
+    const cycle = workSec + restSec;
+    const reps = Math.max(1, Math.min(maxReps, Math.floor(main / cycle)));
+    blocks.push({ title, reps, parts: [part(workLabel, workSec, workRpe, "work"), part(restLabel, restSec, restRpe, "rest")] });
+    return main - reps * cycle;
+  };
+  let leftover = 0;
+
+  if (type === "hiit") {
+    const work = Math.max(15, [20, 30, 40, 45][li] + is * 5);
+    const rest = Math.max(10, [40, 30, 20, 15][li] - is * 5 + (p.goal === "speed" ? 10 : 0));
+    const moves = shuffled(HIIT_MOVES[li]).slice(0, 5);
+    const roundRest = 60;
+    const roundSec = moves.length * (work + rest) + roundRest;
+    const rounds = Math.max(1, Math.floor(main / roundSec));
+    const parts = [];
+    moves.forEach(m => { parts.push(part(m, work, 8 + (is > 0 ? 1 : 0), "work")); parts.push(part("Rest", rest, 2, "rest")); });
+    parts.push(part("Round rest — sip water", roundRest, 2, "rest"));
+    blocks.push({ title: "Circuit rounds", reps: rounds, parts });
+    leftover = main - rounds * roundSec;
+  } else if (p.goal === "speed") {
+    const work = [20, 30, 30, 40][li];
+    const rest = round5([100, 90, 60, 40][li] * ({ easy: 1.5, moderate: 1, hard: 0.75 }[p.intensity] || 1));
+    leftover = intervals("Speed intervals", work, is < 0 ? 8 : 9, rest, 3, "Fast", "Easy", [6, 8, 10, 12][li]);
+  } else if (p.goal === "endurance") {
+    const work = [3, 5, 8, 10][li] * 60;
+    const rest = (is > 0 ? 1 : 2) * 60;
+    if (main < work + rest) blocks.push({ title: "Steady", reps: 1, parts: [part("Steady", main, 5 + Math.max(0, is), "steady")] });
+    else leftover = intervals("Tempo intervals", work, 6 + is, rest, 4, "Tempo", "Easy");
+  } else if (p.goal === "heart") {
+    const steady = [4, 3, 3, 2][li] * 60;
+    leftover = intervals("Steady + pick-ups", steady, 5, 60, 7 + is, "Steady", "Pick-up");
+    // pick-ups are the harder part — relabel kinds so the timer colours them right
+    const b = blocks[blocks.length - 1];
+    b.parts[0].kind = "steady"; b.parts[1].kind = "work";
+  } else if (li === 0 && CARDIO_TYPES[type].impact) {
+    // fat burn for beginners on high-impact types: run/walk (or skip/rest) intervals
+    const work = { easy: 60, moderate: 90, hard: 120 }[p.intensity] || 90;
+    const rest = { easy: 90, moderate: 60, hard: 60 }[p.intensity] || 60;
+    leftover = intervals(type === "run" ? "Run / walk" : "Skip / rest", work, 5, rest, 3, type === "run" ? "Jog" : "Skip", type === "run" ? "Walk" : "Rest");
+  } else if (is > 0) {
+    leftover = intervals("Steady + surges", 240, 6, 60, 7, "Steady", "Surge");
+    const b = blocks[blocks.length - 1];
+    b.parts[0].kind = "steady"; b.parts[1].kind = "work";
+  } else {
+    blocks.push({ title: "Steady", reps: 1, parts: [part("Steady", main, 5 + is, "steady")] });
+  }
+
+  if (leftover >= 60) blocks.push({ title: "Easy steady", reps: 1, parts: [part("Easy steady", leftover, 4, "steady")] });
+  const coolSec = cool + (leftover < 60 ? leftover : 0);
+  blocks.push({ title: "Cool-down", reps: 1, parts: [part("Cool-down", coolSec, 2, "cool")] });
+
+  const steps = [];
+  blocks.forEach(b => {
+    for (let r = 1; r <= b.reps; r++) b.parts.forEach(pt => steps.push({ ...pt, block: b.title, rep: r, reps: b.reps }));
+  });
+  const totalSec = steps.reduce((s, x) => s + x.sec, 0);
+  const kg = cardioBodyWeight();
+  const kcal = Math.round(steps.reduce((s, x) => s + cardioKcal(type, x.rpe, x.sec, kg), 0));
+  return { params: { ...p, type }, blocks, steps, totalSec, kcal };
+}
+
+function cardioSessionTitle(s) {
+  const p = s.params;
+  return `${Math.round(s.totalSec / 60)}-min ${CARDIO_TYPES[p.type].label} · ${CARDIO_GOALS[p.goal].label}`;
+}
+function fmtSec(sec) {
+  sec = Math.max(0, Math.round(sec));
+  if (sec < 60) return `${sec} s`;
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return s ? `${m} min ${s} s` : `${m} min`;
+}
+function fmtClock(sec) {
+  sec = Math.max(0, Math.ceil(sec));
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+}
+
+// ---------- cardio history (stored in workoutHistory so Recovery sees it) ----------
+function cardioEntries(history = getWorkoutHistory()) { return history.filter(h => h.cardio); }
+function startOfWeek(d = new Date()) {
+  const x = new Date(d); x.setHours(0, 0, 0, 0);
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); // Monday
+  return x;
+}
+function cardioWeekStats(history = getWorkoutHistory(), now = new Date()) {
+  const from = startOfWeek(now).getTime();
+  const week = cardioEntries(history).filter(h => new Date(h.finishedAt).getTime() >= from);
+  return {
+    sessions: week.length,
+    minutes: Math.round(week.reduce((s, h) => s + (h.cardio.minutes || 0), 0)),
+    kcal: Math.round(week.reduce((s, h) => s + (h.cardio.kcal || 0), 0))
+  };
+}
+function recordCardio({ type, minutes, kcal, distanceKm, intensity, goal, title }) {
+  const t = CARDIO_TYPES[type] || CARDIO_TYPES.run;
+  const sets = Array.from({ length: Math.max(1, Math.round(minutes / 10)) }, () => ({ reps: 0, weight: 0 }));
+  const entry = {
+    id: `c${Date.now()}${Math.random().toString(36).slice(2, 6)}`,
+    finishedAt: new Date().toISOString(),
+    title: title || `${t.label} · ${minutes} min`,
+    goal: "cardio",
+    duration: minutes,
+    cardio: { type, minutes, kcal: Math.round(kcal), distanceKm: distanceKm || null, intensity: intensity || null, goal: goal || null },
+    exercises: [{ name: t.label, type: "cardio", muscles: t.muscles, sets }]
+  };
+  const history = getWorkoutHistory();
+  history.unshift(entry);
+  setWorkoutHistory(history);
+  return entry;
+}
+
+// ---------- cardio screen UI ----------
+let cardioView = "setup";   // setup | session | timer | log
+let cardioPrefs = null;     // form state
+let cardioSession = null;   // built session
+let cardioRun = null;       // { idx, stepEndsAt, paused, remaining, spent, timer }
+let cardioLogDraft = null;  // { type, minutes, distanceKm, intensity, goal, kcalPerMin, fromTimer }
+
+function cardioOptHtml(attr, value, title, desc, selected) {
+  return `<button type="button" class="chip activity-opt cardio-opt${selected ? " selected" : ""}" data-${attr}="${value}"><span class="ao-head"><span class="ao-title">${title}</span></span><span class="ao-desc">${desc}</span></button>`;
+}
+function cardioWeekCardHtml() {
+  const w = cardioWeekStats();
+  const pct = Math.min(100, Math.round(w.minutes / CARDIO_WEEKLY_TARGET_MIN * 100));
+  return `<div class="card cardio-week">
+    <div class="cardio-week-top"><span class="cardio-week-title">This week</span><span class="cardio-week-nums">${w.minutes} / ${CARDIO_WEEKLY_TARGET_MIN} min</span></div>
+    <div class="rec-bar"><div class="rec-bar-fill fresh" style="width:${pct}%"></div></div>
+    <div class="mp-hint">${w.sessions} session${w.sessions === 1 ? "" : "s"} · ~${w.kcal} kcal burned. Aim for 150–300 min of moderate cardio a week (or 75–150 min hard).</div>
+  </div>`;
+}
+
+function renderCardio() {
+  const body = document.getElementById("cardio-body");
+  if (!body) return;
+  if (cardioView === "timer" && cardioRun) return renderCardioTimer();
+  if (cardioView === "session" && cardioSession) return renderCardioSession();
+  if (cardioView === "log" && cardioLogDraft) return renderCardioLog();
+  cardioView = "setup";
+  renderCardioSetup();
+}
+
+function renderCardioSetup() {
+  if (!cardioPrefs) cardioPrefs = getCardioPrefs();
+  const p = cardioPrefs;
+  const t = CARDIO_TYPES[p.type] || CARDIO_TYPES.run;
+  if (t.where && !t.where.includes(p.where)) p.where = t.where[0];
+  const recent = cardioEntries().slice(0, 5);
+  document.getElementById("cardio-body").innerHTML = `
+    <p class="mp-intro cd-intro">Cardio has its own section, separate from your strength sessions. Set it up to suit you.</p>
+    ${cardioWeekCardHtml()}
+    <h3 class="goal-field-label">Type</h3>
+    <div class="chip-group">${Object.entries(CARDIO_TYPES).map(([k, v]) => chipHtml("cd-type", k, v.label, p.type === k)).join("")}</div>
+    ${t.where ? `<h3 class="goal-field-label">Where</h3><div class="chip-group">${t.where.map(w => chipHtml("cd-where", w, CARDIO_WHERE_LABELS[w], p.where === w)).join("")}</div>` : ""}
+    <h3 class="goal-field-label">Your level</h3>
+    <div class="activity-options">${Object.entries(CARDIO_LEVELS).map(([k, v]) => cardioOptHtml("cd-level", k, v.label, v.hint, p.level === k)).join("")}</div>
+    <h3 class="goal-field-label">Intensity</h3>
+    <div class="chip-group">${Object.entries(CARDIO_INTENSITIES).map(([k, v]) => chipHtml("cd-intensity", k, v, p.intensity === k)).join("")}</div>
+    <h3 class="goal-field-label">Goal</h3>
+    <div class="activity-options">${Object.entries(CARDIO_GOALS).map(([k, v]) => cardioOptHtml("cd-goal", k, v.label, v.hint, p.goal === k)).join("")}</div>
+    <h3 class="goal-field-label">Duration</h3>
+    <div class="chip-group">${CARDIO_DURATIONS.map(m => chipHtml("cd-minutes", m, `${m} min`, p.minutes === m)).join("")}</div>
+    <button type="button" id="cd-build-btn" class="primary-btn">Build Cardio Session</button>
+    <button type="button" id="cd-quicklog-btn" class="primary-btn secondary">Log Cardio I've Already Done</button>
+    <h3 class="section-heading">Recent cardio</h3>
+    <div id="cd-recent">${recent.length ? recent.map(h => `<div class="saved-item"><div><div class="title">${h.title}</div><div class="sub">${new Date(h.finishedAt).toLocaleDateString()} · ${h.cardio.minutes} min · ~${h.cardio.kcal} kcal${h.cardio.distanceKm ? ` · ${h.cardio.distanceKm} km` : ""}</div></div><button type="button" class="saved-delete-btn" data-cd-delete="${h.id}" aria-label="Delete session">Delete</button></div>`).join("")
+      : `<div class="empty-state">No cardio logged yet.<br>Build a session or log one you've done.</div>`}</div>`;
+}
+
+function cardioPartHtml(pt, type, where, level) {
+  return `<div class="cd-part cd-${pt.kind}">
+    <div class="cd-part-top"><span class="cd-part-label">${pt.label}</span><span class="cd-part-time">${fmtSec(pt.sec)}</span></div>
+    <div class="cd-part-cue">${cardioStepCue(pt, { type, where, level })}</div>
+    <div class="cd-part-effort">Effort ${pt.rpe}/10 (${RPE_WORDS[pt.rpe]}) · ${cardioZoneText(pt.rpe)}</div>
+  </div>`;
+}
+
+function renderCardioSession() {
+  const s = cardioSession, p = s.params, t = CARDIO_TYPES[p.type];
+  const sub = [CARDIO_LEVELS[p.level].label, CARDIO_INTENSITIES[p.intensity], t.where ? CARDIO_WHERE_LABELS[p.where] : null].filter(Boolean).join(" · ");
+  const workSteps = s.steps.filter(x => x.kind === "work").length;
+  const weightNote = getNutritionTargets().profile ? "" : `<div class="mp-hint">Calories assume 75 kg. Set your weight in Food › Goals for a better estimate.</div>`;
+  document.getElementById("cardio-body").innerHTML = `
+    <button type="button" class="saved-folder-back" data-cd-nav="setup">‹ Change settings</button>
+    <h2 class="mp-title">${cardioSessionTitle(s)}</h2>
+    <p class="mp-intro">${sub}</p>
+    <div class="cd-stats">
+      <div class="cd-stat"><b>${Math.round(s.totalSec / 60)}</b><span>min</span></div>
+      <div class="cd-stat"><b>~${s.kcal}</b><span>kcal</span></div>
+      <div class="cd-stat"><b>${workSteps || "–"}</b><span>${workSteps ? "hard efforts" : "steady"}</span></div>
+    </div>
+    ${weightNote}
+    ${s.blocks.map(b => `<div class="card cd-block">
+      <div class="cd-block-title">${b.title}${b.reps > 1 ? ` <span class="cd-reps">× ${b.reps}</span>` : ""}</div>
+      ${b.parts.map(pt => cardioPartHtml(pt, p.type, p.where, p.level)).join("")}
+    </div>`).join("")}
+    <div class="mp-hint">Effort scale: 3 = easy chat, 5 = you can talk in sentences, 7 = only a few words, 9 = can't talk. Go by feel if you don't have a heart-rate monitor.</div>
+    <button type="button" id="cd-start-btn" class="primary-btn">Start Session</button>
+    ${p.type === "hiit" ? `<button type="button" id="cd-shuffle-btn" class="primary-btn secondary">Shuffle Moves</button>` : ""}
+    <button type="button" id="cd-logplan-btn" class="primary-btn secondary">Log It Without the Timer</button>`;
+}
+
+// ---------- timer ----------
+let cardioAudio = null;
+function cardioBeep(freq = 880, ms = 160) {
+  try {
+    cardioAudio = cardioAudio || new (window.AudioContext || window.webkitAudioContext)();
+    const o = cardioAudio.createOscillator(), g = cardioAudio.createGain();
+    o.frequency.value = freq; g.gain.value = 0.15;
+    o.connect(g); g.connect(cardioAudio.destination);
+    o.start(); o.stop(cardioAudio.currentTime + ms / 1000);
+  } catch (e) { /* audio not available */ }
+  if (navigator.vibrate) navigator.vibrate(ms);
+}
+function startCardioTimer() {
+  cardioRun = { idx: 0, stepEndsAt: Date.now() + cardioSession.steps[0].sec * 1000, paused: false, remaining: 0, spent: 0, lastBeep: null, timer: null };
+  cardioView = "timer";
+  cardioBeep(660);
+  cardioRun.timer = setInterval(cardioTick, 250);
+  renderCardioTimer();
+}
+function cardioStepRemaining() {
+  if (!cardioRun) return 0;
+  return cardioRun.paused ? cardioRun.remaining : (cardioRun.stepEndsAt - Date.now()) / 1000;
+}
+function cardioAdvance(skipped) {
+  const steps = cardioSession.steps;
+  const step = steps[cardioRun.idx];
+  cardioRun.spent += skipped ? Math.max(0, step.sec - Math.max(0, cardioStepRemaining())) : step.sec;
+  cardioRun.idx++;
+  if (cardioRun.idx >= steps.length) return finishCardioTimer();
+  const next = steps[cardioRun.idx];
+  if (cardioRun.paused) cardioRun.remaining = next.sec;
+  else cardioRun.stepEndsAt = Date.now() + next.sec * 1000;
+  cardioBeep(next.kind === "work" ? 990 : 660, 220);
+  renderCardioTimer();
+}
+function cardioTick() {
+  if (!cardioRun || cardioRun.paused) return;
+  const rem = cardioStepRemaining();
+  if (rem <= 0) return cardioAdvance(false);
+  const whole = Math.ceil(rem);
+  if (whole <= 3 && cardioRun.lastBeep !== `${cardioRun.idx}-${whole}`) { cardioRun.lastBeep = `${cardioRun.idx}-${whole}`; cardioBeep(520, 90); }
+  updateCardioTimerClock();
+}
+function stopCardioTimer() {
+  if (cardioRun && cardioRun.timer) clearInterval(cardioRun.timer);
+}
+function finishCardioTimer(early) {
+  if (!cardioRun) return;
+  if (early) {
+    const step = cardioSession.steps[cardioRun.idx];
+    if (step) cardioRun.spent += Math.max(0, step.sec - Math.max(0, cardioStepRemaining()));
+  }
+  stopCardioTimer();
+  const minutes = Math.max(1, Math.round(cardioRun.spent / 60));
+  cardioRun = null;
+  openCardioLog({ fromTimer: true, minutes });
+}
+function updateCardioTimerClock() {
+  const clock = document.getElementById("cd-clock");
+  if (!clock || !cardioRun) return;
+  const rem = cardioStepRemaining();
+  clock.textContent = fmtClock(rem);
+  const steps = cardioSession.steps;
+  const doneSec = steps.slice(0, cardioRun.idx).reduce((s, x) => s + x.sec, 0) + (steps[cardioRun.idx].sec - Math.max(0, rem));
+  const bar = document.getElementById("cd-progress-fill");
+  if (bar) bar.style.width = `${Math.min(100, doneSec / cardioSession.totalSec * 100)}%`;
+  const left = document.getElementById("cd-time-left");
+  if (left) left.textContent = `${fmtClock(cardioSession.totalSec - doneSec)} left`;
+}
+function renderCardioTimer() {
+  const s = cardioSession, p = s.params, step = s.steps[cardioRun.idx], next = s.steps[cardioRun.idx + 1];
+  const cue = cardioStepCue(step, p);
+  document.getElementById("cardio-body").innerHTML = `
+    <div class="cd-timer cd-${step.kind}">
+      <div class="cd-timer-block">${step.block}${step.reps > 1 ? ` · ${step.rep} of ${step.reps}` : ""}</div>
+      <div class="cd-timer-label" id="cd-step-label">${step.label}</div>
+      <div class="cd-timer-clock" id="cd-clock">${fmtClock(cardioStepRemaining())}</div>
+      <div class="cd-timer-cue">${cue}</div>
+      <div class="cd-timer-effort">Effort ${step.rpe}/10 · ${cardioZoneText(step.rpe)}</div>
+      <div class="cd-progress"><div class="cd-progress-fill" id="cd-progress-fill"></div></div>
+      <div class="cd-timer-meta"><span>Step ${cardioRun.idx + 1} of ${s.steps.length}</span><span id="cd-time-left"></span></div>
+      <div class="cd-timer-next">${next ? `Next: ${next.label} · ${fmtSec(next.sec)}` : "Last step — nearly done!"}</div>
+    </div>
+    <div class="cd-timer-btns">
+      <button type="button" id="cd-pause-btn" class="primary-btn">${cardioRun.paused ? "Resume" : "Pause"}</button>
+      <button type="button" id="cd-skip-btn" class="primary-btn secondary">Skip ›</button>
+    </div>
+    <button type="button" id="cd-end-btn" class="primary-btn secondary">End &amp; Log</button>`;
+  updateCardioTimerClock();
+}
+
+// ---------- logging ----------
+function openCardioLog({ fromTimer = false, minutes = null, quick = false } = {}) {
+  const p = cardioSession && !quick ? cardioSession.params : (cardioPrefs || getCardioPrefs());
+  const planned = cardioSession && !quick ? cardioSession : null;
+  cardioLogDraft = {
+    type: p.type, intensity: p.intensity, goal: p.goal, distanceKm: "",
+    minutes: minutes || (planned ? Math.round(planned.totalSec / 60) : p.minutes),
+    // planned sessions keep their real mix of efforts; quick logs use the intensity's typical effort
+    kcalPerMin: planned ? planned.kcal / (planned.totalSec / 60) : null,
+    title: planned ? cardioSessionTitle(planned) : null,
+    fromTimer, quick
+  };
+  cardioView = "log";
+  renderCardioLog();
+}
+function cardioDraftKcal(d = cardioLogDraft) {
+  const per = d.kcalPerMin ?? cardioKcal(d.type, CARDIO_INTENSITY_RPE[d.intensity] || 6, 60);
+  return Math.round(per * (d.minutes || 0));
+}
+function renderCardioLog() {
+  const d = cardioLogDraft;
+  document.getElementById("cardio-body").innerHTML = `
+    <button type="button" class="saved-folder-back" data-cd-nav="${d.quick ? "setup" : "session"}">‹ Back</button>
+    <h2 class="mp-title">${d.fromTimer ? "Nice work!" : "Log cardio"}</h2>
+    <p class="mp-intro">${d.fromTimer ? "Check the details, then save it to your history." : "Add a session you did — it counts towards your week and your Recovery."}</p>
+    ${d.quick ? `<h3 class="goal-field-label">Type</h3><div class="chip-group">${Object.entries(CARDIO_TYPES).map(([k, v]) => chipHtml("cdl-type", k, v.label, d.type === k)).join("")}</div>
+    <h3 class="goal-field-label">How hard was it?</h3><div class="chip-group">${Object.entries(CARDIO_INTENSITIES).map(([k, v]) => chipHtml("cdl-intensity", k, v, d.intensity === k)).join("")}</div>` : ""}
+    <h3 class="goal-field-label">Minutes</h3>
+    <input type="number" id="cdl-minutes" class="mp-input" inputmode="numeric" min="1" max="600" value="${d.minutes}">
+    <h3 class="goal-field-label">Distance (km, optional)</h3>
+    <input type="number" id="cdl-distance" class="mp-input" inputmode="decimal" min="0" step="0.1" value="${d.distanceKm}">
+    <div class="cd-kcal-line">Calories burned: <b id="cdl-kcal">~${cardioDraftKcal()}</b> kcal</div>
+    <button type="button" id="cdl-save-btn" class="primary-btn">Save Session</button>
+    <button type="button" id="cdl-discard-btn" class="primary-btn secondary">Discard</button>`;
+}
+function saveCardioLog() {
+  const d = cardioLogDraft;
+  if (!d || !(d.minutes > 0)) return;
+  recordCardio({ type: d.type, minutes: d.minutes, kcal: cardioDraftKcal(d), distanceKm: parseFloat(d.distanceKm) || null, intensity: d.intensity, goal: d.goal, title: d.quick ? null : d.title });
+  cardioLogDraft = null;
+  cardioSession = null;
+  cardioView = "setup";
+  renderCardio();
+}
+
+document.getElementById("cardio-body").addEventListener("click", e => {
+  const el = e.target.closest("button");
+  if (!el) return;
+  const d = el.dataset;
+  const setPref = (key, val) => { cardioPrefs[key] = val; setCardioPrefs(cardioPrefs); renderCardioSetup(); };
+  if (d.cdType) return setPref("type", d.cdType);
+  if (d.cdWhere) return setPref("where", d.cdWhere);
+  if (d.cdLevel) return setPref("level", d.cdLevel);
+  if (d.cdIntensity) return setPref("intensity", d.cdIntensity);
+  if (d.cdGoal) return setPref("goal", d.cdGoal);
+  if (d.cdMinutes) return setPref("minutes", parseInt(d.cdMinutes, 10));
+  if (d.cdDelete) {
+    if (!confirm("Delete this cardio session?")) return;
+    setWorkoutHistory(getWorkoutHistory().filter(h => h.id !== d.cdDelete));
+    return renderCardioSetup();
+  }
+  if (d.cdNav) { cardioView = d.cdNav; return renderCardio(); }
+  if (d.cdlType || d.cdlIntensity) {
+    if (d.cdlType) cardioLogDraft.type = d.cdlType;
+    if (d.cdlIntensity) cardioLogDraft.intensity = d.cdlIntensity;
+    return renderCardioLog();
+  }
+  switch (el.id) {
+    case "cd-build-btn": cardioSession = buildCardioSession(cardioPrefs); cardioView = "session"; return renderCardio();
+    case "cd-shuffle-btn": cardioSession = buildCardioSession(cardioSession.params); return renderCardioSession();
+    case "cd-quicklog-btn": return openCardioLog({ quick: true });
+    case "cd-logplan-btn": return openCardioLog();
+    case "cd-start-btn": return startCardioTimer();
+    case "cd-pause-btn":
+      if (cardioRun.paused) { cardioRun.stepEndsAt = Date.now() + cardioRun.remaining * 1000; cardioRun.paused = false; }
+      else { cardioRun.remaining = cardioStepRemaining(); cardioRun.paused = true; }
+      return renderCardioTimer();
+    case "cd-skip-btn": return cardioAdvance(true);
+    case "cd-end-btn":
+      if (!confirm("End the session and log what you've done?")) return;
+      return finishCardioTimer(true);
+    case "cdl-save-btn": return saveCardioLog();
+    case "cdl-discard-btn":
+      cardioLogDraft = null; cardioView = cardioSession ? "session" : "setup"; return renderCardio();
+  }
+});
+document.getElementById("cardio-body").addEventListener("input", e => {
+  if (!cardioLogDraft) return;
+  if (e.target.id === "cdl-minutes") cardioLogDraft.minutes = parseInt(e.target.value, 10) || 0;
+  else if (e.target.id === "cdl-distance") cardioLogDraft.distanceKm = e.target.value;
+  else return;
+  const k = document.getElementById("cdl-kcal");
+  if (k) k.textContent = `~${cardioDraftKcal()}`;
+});
+
+document.querySelectorAll("[data-goto-cardio]").forEach(b => b.addEventListener("click", () => showTab("cardio-screen")));
