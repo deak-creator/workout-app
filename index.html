@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Workout App">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <meta name="theme-color" content="#f3f4f8">
-<link rel="stylesheet" href="style.css?v=35">
+<link rel="stylesheet" href="style.css?v=36">
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js" defer></script>
 </head>
 <body>
@@ -55,6 +55,15 @@
       <span class="dash-card-arrow" aria-hidden="true">›</span>
     </button>
 
+    <button type="button" class="dash-card" data-goto="setup-screen" data-presetmode="custom">
+      <span class="dash-card-icon" aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span>
+      <span class="dash-card-text">
+        <span class="dash-card-title">Build Your Own</span>
+        <span class="dash-card-sub">Pick every exercise yourself from the library</span>
+      </span>
+      <span class="dash-card-arrow" aria-hidden="true">›</span>
+    </button>
+
     <button type="button" class="dash-card" data-goto="recovery-screen">
       <span class="dash-card-icon" aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 0 0-7.1 7.1L12 21.5l8.8-8.8a5 5 0 0 0 0-7.1z"/><path d="M3.5 12h4l1.5-3 3 6 1.5-3h7"/></svg></span>
       <span class="dash-card-text">
@@ -93,10 +102,17 @@
         <div class="mode-toggle" data-field="mode" role="tablist" aria-label="Workout mode">
           <button type="button" class="mode-btn selected" data-value="quick" role="tab" aria-selected="true">Quick Workout</button>
           <button type="button" class="mode-btn" data-value="plan" role="tab" aria-selected="false">Multi-Week Plan</button>
+          <button type="button" class="mode-btn" data-value="custom" role="tab" aria-selected="false">Build My Own</button>
         </div>
       </section>
 
-      <section class="card">
+      <section class="card custom-only" hidden>
+        <h2 id="custom-name-label">Name your workout</h2>
+        <input type="text" id="custom-name" class="mp-input" maxlength="40" placeholder="e.g. Upper Body Day" aria-labelledby="custom-name-label">
+        <p class="plan-note">Search the exercise library and pick exactly what you want: filter by muscle or equipment, then set your own sets, reps and weights as you go.</p>
+      </section>
+
+      <section class="card not-custom">
         <h2 id="location-label">Where are you training?</h2>
         <div class="chip-group" data-field="location" role="group" aria-labelledby="location-label">
           <button type="button" class="chip selected" data-value="home">Home (bodyweight/bands/dumbbells)</button>
@@ -142,13 +158,13 @@
         <p class="plan-note">Each day in your plan will be a different workout type (strength, cardio, fat loss, mobility) for balanced, varied training.</p>
       </section>
 
-      <section class="card">
+      <section class="card not-custom">
         <h2 id="goal-prompt-label">Anything specific you want to achieve?</h2>
         <textarea id="goal-prompt-input" class="goal-prompt-input" rows="2" placeholder="e.g. Build lean muscle and get stronger, less cardio, focus on upper body &amp; back" aria-labelledby="goal-prompt-label"></textarea>
         <p class="goal-prompt-hint" id="goal-prompt-hint"></p>
       </section>
 
-      <section class="card">
+      <section class="card not-custom">
         <h2 id="duration-label">Duration</h2>
         <div class="chip-group" data-field="duration" role="group" aria-labelledby="duration-label">
           <button type="button" class="chip" data-value="10">10 min</button>
@@ -159,7 +175,7 @@
         </div>
       </section>
 
-      <section class="card">
+      <section class="card not-custom">
         <h2 id="diff-label">Difficulty</h2>
         <div class="chip-group" data-field="difficulty" role="group" aria-labelledby="diff-label">
           <button type="button" class="chip selected" data-value="beginner">Beginner</button>
@@ -373,7 +389,11 @@
         <span class="qa-search-icon" aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/></svg></span>
         <input type="text" id="addex-search" placeholder="Search exercise or muscle" autocomplete="off">
       </div>
+      <div id="addex-muscle-filters" class="recipe-filters addex-filters" aria-label="Filter by muscle"></div>
+      <div id="addex-equip-filters" class="recipe-filters addex-filters cuisine-filters" aria-label="Filter by equipment"></div>
+      <div id="addex-count" class="recipes-count"></div>
       <div id="addex-list" class="addex-list"></div>
+      <button type="button" id="addex-done-btn" class="primary-btn addex-done" hidden>Done</button>
     </div>
   </div>
 
@@ -502,6 +522,6 @@
   </nav>
 
 </div>
-<script src="app.js?v=35"></script>
+<script src="app.js?v=36"></script>
 </body>
 </html>
