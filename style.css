@@ -1639,3 +1639,39 @@ html, body { background: radial-gradient(ellipse at top, #eef0f5 0%, #f3f4f8 60%
 .cd-timer-btns .primary-btn { flex: 1; }
 .cd-kcal-line { margin: 14px 0; font-size: 15px; color: #334155; }
 .cd-kcal-line b { color: #e11d48; font-size: 18px; }
+
+/* ===== v38: Beer planner ===== */
+#beer-body { width: 100%; }
+#beer-body > .primary-btn { display: block; width: 100%; margin-top: 10px; }
+.dash-card-beer .dash-card-icon { background: #fef3c7; color: #d97706; }
+#beer-body .chip small { opacity: .7; font-weight: 500; margin-left: 2px; }
+.bp-week { padding: 4px 12px; }
+.bp-day { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #eef0f5; }
+.bp-day:last-child { border-bottom: none; }
+.bp-day.today .bp-day-name b { color: #e11d48; }
+.bp-day-name { width: 52px; display: flex; flex-direction: column; flex-shrink: 0; }
+.bp-day-name b { font-size: 15px; color: #0f172a; }
+.bp-day-name span { font-size: 11px; color: #94a3b8; }
+.bp-day-info { flex: 1; min-width: 0; font-size: 13px; color: #334155; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.bp-day.over .bp-day-info { color: #dc2626; font-weight: 600; }
+.bp-none { color: #94a3b8; }
+.bp-log-btn { border: 1px solid #fcd34d; background: #fffbeb; color: #b45309; border-radius: 999px; font-size: 12px; font-weight: 700; padding: 3px 10px; cursor: pointer; }
+.bp-log-btn.done { border-color: #86efac; background: #f0fdf4; color: #15803d; }
+.bp-stepper { display: flex; align-items: center; gap: 6px; }
+.bp-step { width: 34px; height: 34px; border-radius: 50%; border: 1px solid #dde1ea; background: #eef0f5; color: #0f172a; font-size: 20px; font-weight: 700; line-height: 1; cursor: pointer; }
+.bp-step:disabled { opacity: .35; cursor: default; }
+.bp-count { min-width: 22px; text-align: center; font-size: 18px; font-weight: 800; color: #0f172a; }
+.bp-summary { margin-top: 8px; }
+.bp-total { font-size: 16px; color: #0f172a; }
+.bp-total b { font-size: 22px; color: #d97706; }
+.bp-guide { font-size: 12px; color: #64748b; background: #f8fafc; border-radius: 10px; padding: 8px 10px; margin-top: 6px; line-height: 1.4; }
+.bp-guide.warn { background: #fef2f2; color: #b91c1c; }
+.bp-offset { margin-top: 8px; }
+.bp-offset-title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: #64748b; margin-bottom: 6px; }
+.bp-offset-main { font-size: 16px; color: #0f172a; margin: 6px 0 2px; }
+.bp-offset .chip { margin-top: 4px; }
+.bp-offset .rec-bar { margin: 6px 0 4px; }
+.bp-offset .primary-btn { width: 100%; margin: 10px 0 0; }
+.bp-cardio-types .chip { font-size: 13px; padding: 7px 12px; }
+.bp-tips { margin: 0 0 6px; padding-left: 18px; font-size: 13px; color: #334155; line-height: 1.5; }
+.beer-adj-note { font-size: 12px; color: #b45309; margin-top: 6px; text-align: center; }
