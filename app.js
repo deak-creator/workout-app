@@ -2855,13 +2855,14 @@ document.getElementById("qa-log-only-btn").addEventListener("click", () => {
 // ============================================================
 const RECIPE_FILTERS = [
   ["all", "All"], ["breakfast", "Breakfast"], ["lunch", "Lunch"], ["dinner", "Dinner"], ["snack", "Snacks"],
-  ["protein", "High Protein"], ["vegetarian", "Vegetarian"], ["quick", "Under 15 min"]
+  ["protein", "High Protein"], ["vegetarian", "Vegetarian"], ["quick", "Under 15 min"], ["sauce", "Homemade Sauce"]
 ];
+const RECIPE_GROUP_FALLBACK = "For the sauce";
 const RECIPE_CATEGORY_LABELS = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snack" };
 const RECIPE_FRACTIONS = { 0.25: "¼", 0.5: "½", 0.75: "¾" };
 
 let recipeDataPromise = null;
-let recipeData = null;      // { foods, recipes }
+let recipeData = null;      // { foods, groups, recipes }
 let recipeFilter = "all";
 let recipeCuisine = "all"; // "all" or a cuisine name
 let recipeQuery = "";
@@ -2900,10 +2901,11 @@ function recipeMatches(recipe) {
   if (f === "protein" && !recipeIsHighProtein(per)) return false;
   if (f === "vegetarian" && !recipe.vegetarian) return false;
   if (f === "quick" && recipe.minutes > 15) return false;
+  if (f === "sauce" && !recipe.homemadeSauce) return false;
   if (recipeCuisine !== "all" && recipe.cuisine !== recipeCuisine) return false;
   const q = recipeQuery.trim().toLowerCase();
   if (!q) return true;
-  const haystack = [recipe.name, recipe.cuisine || "", ...recipe.ingredients.map(i => i.label), ...recipe.ingredients.map(i => recipeData.foods[i.food].name)]
+  const haystack = [recipe.name, recipe.cuisine || "", recipe.homemadeSauce ? "homemade sauce" : "", ...recipe.ingredients.map(i => i.label), ...recipe.ingredients.map(i => recipeData.foods[i.food].name)]
     .join(" ").toLowerCase();
   return q.split(/\s+/).every(word => haystack.includes(word));
 }
@@ -2921,6 +2923,7 @@ function recipeTagsHtml(recipe, per) {
   if (recipeIsHighProtein(per)) tags.push(`<span class="recipe-tag protein">High protein</span>`);
   if (recipe.vegetarian) tags.push(`<span class="recipe-tag veg">Vegetarian</span>`);
   if (recipe.minutes <= 15) tags.push(`<span class="recipe-tag quick">Quick</span>`);
+  if (recipe.homemadeSauce) tags.push(`<span class="recipe-tag sauce">Homemade sauce</span>`);
   return tags.join("");
 }
 
@@ -3006,6 +3009,18 @@ function recipeIngredientText(ing, scale) {
   return `<span class="recipe-ing-qty">${qty}${unit}</span> ${ing.label}`;
 }
 
+// Main ingredients first, then each from-scratch sauce/dressing/marinade under its own sub-heading
+function recipeIngredientsHtml(recipe, scale, exclude) {
+  const item = i => exclude.includes(i.food)
+    ? `<li class="left-out"><span class="recipe-ing-struck">${recipeIngredientText(i, scale)}</span><span class="recipe-left-out-tag">Left out</span></li>`
+    : `<li>${recipeIngredientText(i, scale)}</li>`;
+  const groups = [...new Set(recipe.ingredients.map(i => i.group).filter(Boolean))];
+  const labels = (recipeData && recipeData.groups) || {};
+  return recipe.ingredients.filter(i => !i.group).map(item).join("") + groups.map(g =>
+    `<li class="recipe-ing-group">${labels[g] || RECIPE_GROUP_FALLBACK}</li>` +
+    recipe.ingredients.filter(i => i.group === g).map(item).join("")).join("");
+}
+
 function renderRecipeDetail(recipe) {
   const ctx = recipeContext || {};
   const exclude = ctx.exclude || [];
@@ -3040,9 +3055,7 @@ function renderRecipeDetail(recipe) {
         <button type="button" class="icon-btn" id="recipe-serv-plus" aria-label="More servings">+</button>
       </div>
     </div>
-    <ul class="recipe-ingredients">${recipe.ingredients.map(i => exclude.includes(i.food)
-      ? `<li class="left-out"><span class="recipe-ing-struck">${recipeIngredientText(i, scale)}</span><span class="recipe-left-out-tag">Left out</span></li>`
-      : `<li>${recipeIngredientText(i, scale)}</li>`).join("")}</ul>
+    <ul class="recipe-ingredients">${recipeIngredientsHtml(recipe, scale, exclude)}</ul>
     <h3 class="section-heading">Method</h3>
     <ol class="recipe-steps">${recipe.steps.map(s => `<li>${s}</li>`).join("")}</ol>`;
 
