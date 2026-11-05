@@ -1565,3 +1565,20 @@ html, body { background: radial-gradient(ellipse at top, #eef0f5 0%, #f3f4f8 60%
 .cuisine-filters { margin-top: -2px; }
 .cuisine-filters .chip { font-size: 0.82rem; padding: 5px 11px; }
 .mp-cuisines .chip { font-size: 0.85rem; }
+
+/* ===== v35: defined activity levels + goal pace ===== */
+.goal-hint { font-size: 12px; color: #64748b; margin: -2px 0 8px; line-height: 1.4; }
+.activity-options { display: flex; flex-direction: column; gap: 8px; }
+.chip.activity-opt, .chip.pace-opt { border-radius: 14px; text-align: left; padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; }
+.chip.pace-opt { flex: 1 1 0; min-width: 0; padding: 9px 10px; }
+.ao-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.ao-title { font-weight: 700; font-size: 14px; }
+.ao-mult { font-size: 12px; opacity: 0.7; font-weight: 600; }
+.ao-desc { font-size: 12px; font-weight: 400; line-height: 1.35; opacity: 0.85; }
+.goal-preview .gp-row { display: flex; justify-content: space-between; gap: 10px; }
+.goal-preview .gp-sub { font-size: 11px; color: #64748b; margin: -3px 0 4px; }
+.goal-preview .gp-total { border-top: 1px solid #cbd1dd; margin-top: 6px; padding-top: 6px; font-weight: 700; }
+.goal-preview .gp-macros { margin-top: 4px; }
+.goal-preview .gp-note { margin-top: 6px; font-size: 12px; color: #b45309; }
+.goal-input-grid label { min-width: 0; }
+.goal-input-grid input { width: 100%; min-width: 0; box-sizing: border-box; }
