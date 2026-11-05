@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Workout App">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <meta name="theme-color" content="#f3f4f8">
-<link rel="stylesheet" href="style.css?v=32">
+<link rel="stylesheet" href="style.css?v=33">
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js" defer></script>
 </head>
 <body>
@@ -277,6 +277,8 @@
 
     <button type="button" id="recipes-btn" class="primary-btn secondary"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M9 8h7M9 12h5"/></svg> Recipe Index</button>
 
+    <button type="button" id="mealplan-btn" class="primary-btn secondary"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4M8 14h3M8 17h6"/></svg> Meal Plan</button>
+
     <form id="manual-barcode-form" class="manual-barcode">
       <input type="text" id="manual-barcode-input" inputmode="numeric" placeholder="Or enter barcode number" aria-label="Enter barcode number manually">
       <button type="submit" class="icon-btn" aria-label="Look up barcode">→</button>
@@ -456,6 +458,11 @@
     <div id="recipe-detail" class="recipe-detail" hidden></div>
   </main>
 
+  <main id="mealplan-screen" class="screen" aria-label="Meal plan">
+    <button type="button" id="mealplan-back-btn" class="saved-folder-back">‹ Food</button>
+    <div id="mealplan-body"></div>
+  </main>
+
   <main id="saved-screen" class="screen" aria-label="Saved items">
     <div class="workout-header">
       <h2>Saved</h2>
@@ -489,6 +496,6 @@
   </nav>
 
 </div>
-<script src="app.js?v=32"></script>
+<script src="app.js?v=33"></script>
 </body>
 </html>
