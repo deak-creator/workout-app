@@ -1560,3 +1560,8 @@ html, body { background: radial-gradient(ellipse at top, #eef0f5 0%, #f3f4f8 60%
 #mealplan-back-btn { display: block; align-self: flex-start; text-align: left; }
 #mealplan-body { width: 100%; }
 #mealplan-body > .primary-btn { display: block; width: 100%; }
+
+/* ===== v34: cuisines ===== */
+.cuisine-filters { margin-top: -2px; }
+.cuisine-filters .chip { font-size: 0.82rem; padding: 5px 11px; }
+.mp-cuisines .chip { font-size: 0.85rem; }
