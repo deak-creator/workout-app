@@ -1723,7 +1723,13 @@ function updateHomeStats() {
   }
 
   const calSubEl = document.getElementById("home-cal-sub");
-  if (calSubEl) calSubEl.textContent = `${Math.round(totals.calories)} / ${targets.calories} kcal today`;
+  const homeBeerAdj = beerDiaryAdjustment(todayKey());
+  if (calSubEl) calSubEl.textContent = `${Math.round(totals.calories)} / ${targets.calories + (homeBeerAdj ? homeBeerAdj.delta : 0)} kcal today`;
+  const beerSubEl = document.getElementById("home-beer-sub");
+  if (beerSubEl) {
+    const bs = beerPlanStats();
+    beerSubEl.textContent = bs.beers ? `${bs.beers} beer${bs.beers === 1 ? "" : "s"} planned this week · ~${bs.kcal.toLocaleString()} kcal` : "Plan the week's beers and balance the calories";
+  }
   renderHomeSaved();
 
   const recSubEl = document.getElementById("home-recovery-sub");
@@ -1785,7 +1791,8 @@ const titleByScreen = {
   "exercise-screen": "Exercise",
   "recipes-screen": "Recipes",
   "mealplan-screen": "Meal Plan",
-  "cardio-screen": "Cardio"
+  "cardio-screen": "Cardio",
+  "beer-screen": "Beer Planner"
 };
 const _origShowTab = showTab;
 showTab = function (id) {
@@ -1800,8 +1807,9 @@ showTab = function (id) {
   if (id === "recipes-screen") renderRecipes();
   if (id === "mealplan-screen") renderMealPlan();
   if (id === "cardio-screen") renderCardio();
+  if (id === "beer-screen") renderBeerPlanner();
   // sync bottom tabbar highlight for screens not directly in tabbar (workout/plan detail views)
-  const tabMap = { "setup-screen": "setup-screen", "workout-screen": "setup-screen", "plan-screen": "setup-screen", "exercise-screen": "setup-screen", "recipes-screen": "nutrition-screen", "mealplan-screen": "nutrition-screen", "cardio-screen": "home-screen" };
+  const tabMap = { "setup-screen": "setup-screen", "workout-screen": "setup-screen", "plan-screen": "setup-screen", "exercise-screen": "setup-screen", "recipes-screen": "nutrition-screen", "mealplan-screen": "nutrition-screen", "cardio-screen": "home-screen", "beer-screen": "nutrition-screen" };
   const activeTabId = tabMap[id] || id;
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === activeTabId));
 };
@@ -1966,7 +1974,11 @@ function renderFoodLog() {
 
   const entries = getTodayFoodLog();
   const totals = sumNutrients(entries);
-  const targets = getNutritionTargets();
+  const targets = { ...getNutritionTargets() };
+  const beerAdj = beerDiaryAdjustment(activeFoodDate);
+  if (beerAdj) targets.calories += beerAdj.delta;
+  const beerNote = document.getElementById("beer-adj-note");
+  if (beerNote) { beerNote.hidden = !beerAdj; beerNote.textContent = beerAdjNoteText(beerAdj); }
 
   document.getElementById("n-cal").textContent = Math.round(totals.calories);
   document.getElementById("n-cal-goal").textContent = targets.calories;
@@ -3474,10 +3486,6 @@ document.getElementById("mealplan-body").addEventListener("click", e => {
   }
 });
 
-// ============================================================
-// init
-// ============================================================
-updateHomeStats();
 
 // ============================================================
 // CARDIO (v37) — its own section, kept out of strength training sessions.
@@ -4045,3 +4053,227 @@ document.getElementById("cardio-body").addEventListener("input", e => {
 });
 
 document.querySelectorAll("[data-goto-cardio]").forEach(b => b.addEventListener("click", () => showTab("cardio-screen")));
+
+// ============================================================
+// BEER PLANNER (v38) — plan the week's beers, see the calories and
+// balance them with a smaller food target and/or extra cardio.
+// ============================================================
+const BEER_PLAN_KEY = "beerPlan";
+// kcal and carbs per 100 ml, typical Australian beers
+const BEER_TYPES = {
+  zero: { label: "Zero alcohol", abv: 0.5, kcal100: 17, carbs100: 3.5 },
+  light: { label: "Light", abv: 2.7, kcal100: 27, carbs100: 2.3 },
+  mid: { label: "Mid-strength", abv: 3.5, kcal100: 31, carbs100: 2.5 },
+  full: { label: "Full-strength", abv: 4.8, kcal100: 39, carbs100: 2.9 },
+  craft: { label: "Craft / IPA", abv: 6, kcal100: 55, carbs100: 4.5 }
+};
+const BEER_SIZES = {
+  middy: { label: "Middy", ml: 285 },
+  bottle: { label: "Bottle", ml: 330 },
+  can: { label: "Can / stubby", ml: 375 },
+  schooner: { label: "Schooner", ml: 425 },
+  pint: { label: "Pint", ml: 570 }
+};
+const BEER_BALANCE = { food: { label: "Eat less", share: 1 }, mix: { label: "Half & half", share: 0.5 }, cardio: { label: "Do cardio", share: 0 } };
+const BEER_CARDIO_TYPES = ["walk", "run", "cycle", "row", "swim", "hiit"];
+const STD_DRINKS_WEEK_MAX = 10, STD_DRINKS_DAY_MAX = 4; // Australian guidelines
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+// Week keys use the same UTC YYYY-MM-DD keys as the food diary
+function keyAddDays(key, n) {
+  const d = new Date(key + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function weekStartKey(key = todayKey()) {
+  const dow = (new Date(key + "T00:00:00Z").getUTCDay() + 6) % 7;
+  return keyAddDays(key, -dow);
+}
+function beerDayIndex(key) { return (new Date(key + "T00:00:00Z").getUTCDay() + 6) % 7; }
+
+function defaultBeerPlan() {
+  return { weekStart: weekStartKey(), type: "full", size: "can", counts: [0, 0, 0, 0, 0, 0, 0], logged: [], balance: "mix", cardioType: "walk", applyToDiary: true };
+}
+function getBeerPlan() {
+  let p;
+  try { p = JSON.parse(localStorage.getItem(BEER_PLAN_KEY) || "null"); } catch (e) { p = null; }
+  if (!p) return defaultBeerPlan();
+  // a new week starts empty but keeps your beer, size and balance settings
+  if (p.weekStart !== weekStartKey()) p = { ...defaultBeerPlan(), type: p.type, size: p.size, balance: p.balance, cardioType: p.cardioType, applyToDiary: p.applyToDiary };
+  return { ...defaultBeerPlan(), ...p };
+}
+function setBeerPlan(p) { localStorage.setItem(BEER_PLAN_KEY, JSON.stringify(p)); }
+
+function beerOne(plan) {
+  const t = BEER_TYPES[plan.type] || BEER_TYPES.full, ml = (BEER_SIZES[plan.size] || BEER_SIZES.can).ml;
+  return { kcal: t.kcal100 * ml / 100, carbs: t.carbs100 * ml / 100, std: ml * t.abv / 100 * 0.789 / 10, ml };
+}
+function beerPlanStats(plan = getBeerPlan()) {
+  const one = beerOne(plan);
+  const beers = plan.counts.reduce((s, n) => s + n, 0);
+  const kcal = Math.round(beers * one.kcal);
+  const share = (BEER_BALANCE[plan.balance] || BEER_BALANCE.mix).share;
+  const foodKcal = Math.round(kcal * share);
+  const cardioKcalTarget = kcal - foodKcal;
+  const perMin = cardioKcal(plan.cardioType, 6, 60);
+  const cardioMinutes = cardioKcalTarget > 0 ? Math.ceil(cardioKcalTarget / perMin) : 0;
+  const sessions = cardioMinutes ? Math.max(1, Math.ceil(cardioMinutes / 45)) : 0;
+  return {
+    one, beers, kcal, std: beers * one.std,
+    dayStd: plan.counts.map(n => n * one.std),
+    dailyCut: Math.round(foodKcal / 7), foodKcal, cardioKcalTarget, cardioMinutes, sessions,
+    sessionMinutes: sessions ? Math.ceil(cardioMinutes / sessions) : 0
+  };
+}
+// How a food-diary day's calorie target changes with the beer plan:
+// food is trimmed every day, and the day's planned beers are added on top so
+// logging them doesn't put you "over". Net over the week = your normal target.
+function beerDiaryAdjustment(key) {
+  const plan = getBeerPlan();
+  if (!plan.applyToDiary || weekStartKey(key) !== plan.weekStart) return null;
+  const s = beerPlanStats(plan);
+  if (!s.beers) return null;
+  const beerKcal = Math.round(plan.counts[beerDayIndex(key)] * s.one.kcal);
+  return { cut: s.dailyCut, beerKcal, delta: beerKcal - s.dailyCut };
+}
+function beerAdjNoteText(adj) {
+  if (!adj) return "";
+  return `Beer plan: −${adj.cut} kcal food${adj.beerKcal ? ` · +${adj.beerKcal} kcal for today's beers` : ""}`;
+}
+function logBeersToDiary(dayIdx) {
+  const plan = getBeerPlan();
+  const n = plan.counts[dayIdx];
+  if (!n) return;
+  const one = beerOne(plan), t = BEER_TYPES[plan.type], size = BEER_SIZES[plan.size];
+  const key = keyAddDays(plan.weekStart, dayIdx);
+  const entries = getFoodLogFor(key);
+  entries.unshift({
+    name: `${t.label} beer × ${n}`, brand: `${size.label} ${size.ml} ml · ${(n * one.std).toFixed(1)} standard drinks`,
+    calories: Math.round(n * one.kcal), protein: Math.round(n * one.ml * 0.003 * 10) / 10, carbs: Math.round(n * one.carbs), fat: 0,
+    beer: true, loggedAt: new Date().toISOString()
+  });
+  saveFoodLogFor(key, entries);
+  plan.logged = Array.from(new Set([...(plan.logged || []), dayIdx]));
+  setBeerPlan(plan);
+}
+
+function renderBeerPlanner() {
+  const body = document.getElementById("beer-body");
+  if (!body) return;
+  const plan = getBeerPlan();
+  const s = beerPlanStats(plan);
+  const today = todayKey(), todayIdx = plan.weekStart === weekStartKey(today) ? beerDayIndex(today) : -1;
+  const T = getNutritionTargets().calories;
+  const overWeek = s.std > STD_DRINKS_WEEK_MAX + 0.05;
+  const overDays = s.dayStd.map((v, i) => v > STD_DRINKS_DAY_MAX + 0.05 ? i : -1).filter(i => i >= 0);
+  const ct = CARDIO_TYPES[plan.cardioType];
+  const cardioDone = cardioWeekStats().kcal;
+  const lightSave = plan.type !== "light" && plan.type !== "zero" ? Math.round(s.kcal - s.beers * BEER_TYPES.light.kcal100 * s.one.ml / 100) : 0;
+  const zeroSave = plan.type !== "zero" ? Math.round(Math.floor(s.beers / 2) * (s.one.kcal - BEER_TYPES.zero.kcal100 * s.one.ml / 100)) : 0;
+  const bigDays = plan.counts.map((n, i) => s.dayStd[i] >= 4 - 0.05 && n ? i : -1).filter(i => i >= 0);
+  const runEquiv = Math.round(s.kcal / cardioKcal("run", 6, 60));
+
+  body.innerHTML = `
+    <p class="mp-intro">Plan your beers for the week. You'll see the calories, and how to balance them with food and cardio.</p>
+    <h3 class="goal-field-label">Beer</h3>
+    <div class="chip-group">${Object.entries(BEER_TYPES).map(([k, v]) => chipHtml("bp-type", k, `${v.label} <small>${v.abv}%</small>`, plan.type === k)).join("")}</div>
+    <h3 class="goal-field-label">Size</h3>
+    <div class="chip-group">${Object.entries(BEER_SIZES).map(([k, v]) => chipHtml("bp-size", k, `${v.label} <small>${v.ml} ml</small>`, plan.size === k)).join("")}</div>
+    <div class="mp-hint">One ${BEER_SIZES[plan.size].label.toLowerCase()} = ~${Math.round(s.one.kcal)} kcal · ${s.one.std.toFixed(1)} standard drinks</div>
+
+    <h3 class="goal-field-label">This week</h3>
+    <div class="card bp-week">${plan.counts.map((n, i) => {
+      const key = keyAddDays(plan.weekStart, i);
+      const d = new Date(key + "T00:00:00Z");
+      const over = overDays.includes(i);
+      const canLog = n > 0 && i <= todayIdx;
+      const logged = (plan.logged || []).includes(i);
+      return `<div class="bp-day${i === todayIdx ? " today" : ""}${over ? " over" : ""}">
+        <div class="bp-day-name"><b>${DAY_NAMES[i]}</b><span>${d.getUTCDate()} ${d.toLocaleString("en-AU", { month: "short", timeZone: "UTC" })}</span></div>
+        <div class="bp-day-info">${n ? `${Math.round(n * s.one.kcal)} kcal · ${s.dayStd[i].toFixed(1)} std` : `<span class="bp-none">No beers</span>`}
+          ${canLog ? `<button type="button" class="bp-log-btn${logged ? " done" : ""}" data-bp-log="${i}">${logged ? "Logged ✓" : "Log to diary"}</button>` : ""}</div>
+        <div class="bp-stepper">
+          <button type="button" class="bp-step" data-bp-dec="${i}" aria-label="One less on ${DAY_NAMES[i]}"${n ? "" : " disabled"}>−</button>
+          <span class="bp-count" data-bp-count="${i}">${n}</span>
+          <button type="button" class="bp-step" data-bp-inc="${i}" aria-label="One more on ${DAY_NAMES[i]}">+</button>
+        </div>
+      </div>`;
+    }).join("")}</div>
+
+    <div class="card bp-summary">
+      <div class="bp-total"><b id="bp-total-kcal">${s.kcal.toLocaleString()}</b> kcal from <b>${s.beers}</b> beer${s.beers === 1 ? "" : "s"}</div>
+      <div class="mp-hint">${s.std.toFixed(1)} standard drinks this week${s.beers ? ` · about ${runEquiv} min of running to burn off` : ""}</div>
+      <div class="bp-guide${overWeek || overDays.length ? " warn" : ""}">${overWeek || overDays.length
+        ? `Heads up: ${[overWeek ? `${s.std.toFixed(1)} standard drinks is over the 10-a-week guideline` : "", overDays.length ? `${overDays.map(i => DAY_NAMES[i]).join(", ")} ${overDays.length === 1 ? "is" : "are"} over 4 on one day` : ""].filter(Boolean).join(", and ")}. `
+        : ""}Australian guidelines: no more than 10 standard drinks a week and no more than 4 on any one day.</div>
+    </div>
+
+    ${s.beers ? `
+    <h3 class="goal-field-label">Balance it with</h3>
+    <div class="chip-group">${Object.entries(BEER_BALANCE).map(([k, v]) => chipHtml("bp-balance", k, v.label, plan.balance === k)).join("")}</div>
+    ${s.foodKcal ? `<div class="card bp-offset">
+      <div class="bp-offset-title">Food</div>
+      <div class="bp-offset-main">Eat <b>${s.dailyCut} kcal less</b> each day</div>
+      <div class="mp-hint">${T - s.dailyCut} kcal of food a day instead of ${T}, plus your beers on the days you drink them.</div>
+      <button type="button" class="chip${plan.applyToDiary ? " selected" : ""}" data-bp-apply="1">${plan.applyToDiary ? "✓ " : ""}Use this in my Food Diary</button>
+    </div>` : ""}
+    ${s.cardioKcalTarget ? `<div class="card bp-offset">
+      <div class="bp-offset-title">Cardio</div>
+      <div class="chip-group bp-cardio-types">${BEER_CARDIO_TYPES.map(k => chipHtml("bp-cardio", k, CARDIO_TYPES[k].label.replace(" (no equipment)", ""), plan.cardioType === k)).join("")}</div>
+      <div class="bp-offset-main"><b>~${s.cardioMinutes} min</b> of moderate ${{ walk: "walking", run: "running", cycle: "cycling", row: "rowing", swim: "swimming", hiit: "HIIT" }[plan.cardioType]} this week</div>
+      <div class="mp-hint">${s.sessions > 1 ? `e.g. ${s.sessions} × ${s.sessionMinutes} min sessions` : `One ${s.sessionMinutes}-min session`} to burn ~${s.cardioKcalTarget} kcal. Cardio logged this week: ~${cardioDone} kcal.</div>
+      <div class="rec-bar"><div class="rec-bar-fill fresh" style="width:${Math.min(100, Math.round(cardioDone / s.cardioKcalTarget * 100))}%"></div></div>
+      <button type="button" id="bp-cardio-btn" class="primary-btn">Build a ${beerSessionMinutes(s.sessionMinutes)}-min ${ct.label.replace(" (no equipment)", "")} Session</button>
+    </div>` : ""}
+    <h3 class="goal-field-label">Tips</h3>
+    <ul class="bp-tips">
+      ${lightSave > 0 ? `<li>Switching to light beer saves ~${lightSave} kcal this week.</li>` : ""}
+      ${zeroSave > 0 && s.beers >= 2 ? `<li>Swapping every second beer for a zero-alcohol one saves ~${zeroSave} kcal.</li>` : ""}
+      ${bigDays.length ? `<li>After ${bigDays.map(i => DAY_NAMES[i]).join(", ")}: go easy the next day (a walk or mobility, not heavy lifting). Alcohol slows recovery.</li>` : ""}
+      <li>Eat a protein-rich meal before drinking and have water between beers.</li>
+    </ul>` : `<div class="empty-state">Tap + on a day to plan your beers.</div>`}
+    ${s.beers ? `<button type="button" id="bp-clear-btn" class="primary-btn secondary">Clear This Week</button>` : ""}`;
+}
+// sessions are built from the Cardio section's duration options
+function beerSessionMinutes(m) {
+  return CARDIO_DURATIONS.reduce((best, d) => Math.abs(d - m) < Math.abs(best - m) ? d : best, CARDIO_DURATIONS[0]);
+}
+
+document.getElementById("beer-body").addEventListener("click", e => {
+  const el = e.target.closest("button");
+  if (!el) return;
+  const d = el.dataset, plan = getBeerPlan();
+  const save = () => { setBeerPlan(plan); renderBeerPlanner(); };
+  if (d.bpType) { plan.type = d.bpType; return save(); }
+  if (d.bpSize) { plan.size = d.bpSize; return save(); }
+  if (d.bpBalance) { plan.balance = d.bpBalance; return save(); }
+  if (d.bpCardio) { plan.cardioType = d.bpCardio; return save(); }
+  if (d.bpApply) { plan.applyToDiary = !plan.applyToDiary; return save(); }
+  if (d.bpInc !== undefined) { const i = +d.bpInc; plan.counts[i] = Math.min(30, plan.counts[i] + 1); plan.logged = (plan.logged || []).filter(x => x !== i); return save(); }
+  if (d.bpDec !== undefined) { const i = +d.bpDec; plan.counts[i] = Math.max(0, plan.counts[i] - 1); plan.logged = (plan.logged || []).filter(x => x !== i); return save(); }
+  if (d.bpLog !== undefined) {
+    if ((plan.logged || []).includes(+d.bpLog) && !confirm("Already logged. Log these beers again?")) return;
+    logBeersToDiary(+d.bpLog); return renderBeerPlanner();
+  }
+  if (el.id === "bp-clear-btn") {
+    if (!confirm("Clear this week's beer plan?")) return;
+    plan.counts = [0, 0, 0, 0, 0, 0, 0]; plan.logged = []; return save();
+  }
+  if (el.id === "bp-cardio-btn") {
+    const s = beerPlanStats(plan);
+    cardioPrefs = { ...getCardioPrefs(), type: plan.cardioType, minutes: beerSessionMinutes(s.sessionMinutes), goal: "fatburn", intensity: "moderate" };
+    if (CARDIO_TYPES[plan.cardioType].where && !CARDIO_TYPES[plan.cardioType].where.includes(cardioPrefs.where)) cardioPrefs.where = CARDIO_TYPES[plan.cardioType].where[0];
+    setCardioPrefs(cardioPrefs);
+    cardioSession = buildCardioSession(cardioPrefs);
+    cardioView = "session";
+    showTab("cardio-screen");
+  }
+});
+
+document.getElementById("beer-btn").addEventListener("click", () => showTab("beer-screen"));
+document.getElementById("beer-back-btn").addEventListener("click", () => showTab("nutrition-screen"));
+
+// ============================================================
+// init — keep this LAST: updateHomeStats reads constants from every
+// module above (cardio, beer planner), which don't exist until defined.
+// ============================================================
+updateHomeStats();
