@@ -2671,6 +2671,7 @@ const RECIPE_FRACTIONS = { 0.25: "¼", 0.5: "½", 0.75: "¾" };
 let recipeDataPromise = null;
 let recipeData = null;      // { foods, recipes }
 let recipeFilter = "all";
+let recipeCuisine = "all"; // "all" or a cuisine name
 let recipeQuery = "";
 let recipeOpenId = null;    // recipe shown in the detail view, null = list view
 let recipeServings = 1;     // servings the user is making (scales ingredient amounts)
@@ -2707,11 +2708,20 @@ function recipeMatches(recipe) {
   if (f === "protein" && !recipeIsHighProtein(per)) return false;
   if (f === "vegetarian" && !recipe.vegetarian) return false;
   if (f === "quick" && recipe.minutes > 15) return false;
+  if (recipeCuisine !== "all" && recipe.cuisine !== recipeCuisine) return false;
   const q = recipeQuery.trim().toLowerCase();
   if (!q) return true;
-  const haystack = [recipe.name, ...recipe.ingredients.map(i => i.label), ...recipe.ingredients.map(i => recipeData.foods[i.food].name)]
+  const haystack = [recipe.name, recipe.cuisine || "", ...recipe.ingredients.map(i => i.label), ...recipe.ingredients.map(i => recipeData.foods[i.food].name)]
     .join(" ").toLowerCase();
   return q.split(/\s+/).every(word => haystack.includes(word));
+}
+
+function recipeCuisines() {
+  return [...new Set(recipeData.recipes.map(r => r.cuisine).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+function recipeMetaLine(recipe) {
+  return [RECIPE_CATEGORY_LABELS[recipe.category], recipe.cuisine, `${recipe.minutes} min`].filter(Boolean).join(" · ");
 }
 
 function recipeTagsHtml(recipe, per) {
@@ -2764,6 +2774,9 @@ function renderRecipeList() {
   document.getElementById("recipe-filters").innerHTML = RECIPE_FILTERS.map(([key, label]) =>
     `<button type="button" class="chip${recipeFilter === key ? " selected" : ""}" data-recipe-filter="${key}" role="tab" aria-selected="${recipeFilter === key}">${label}</button>`
   ).join("");
+  document.getElementById("recipe-cuisine-filters").innerHTML = [["all", "All cuisines"], ...recipeCuisines().map(c => [c, c])].map(([key, label]) =>
+    `<button type="button" class="chip${recipeCuisine === key ? " selected" : ""}" data-recipe-cuisine="${key}" role="tab" aria-selected="${recipeCuisine === key}">${label}</button>`
+  ).join("");
   const matches = recipeData.recipes.filter(recipeMatches);
   document.getElementById("recipes-count").textContent = `${matches.length} recipe${matches.length === 1 ? "" : "s"}`;
   const listEl = document.getElementById("recipes-list");
@@ -2776,7 +2789,7 @@ function renderRecipeList() {
     return `<button type="button" class="recipe-card" data-recipe-id="${recipe.id}">
       <span class="recipe-emoji" aria-hidden="true">${recipe.emoji}</span>
       <span class="recipe-card-text">
-        <span class="recipe-card-cat">${RECIPE_CATEGORY_LABELS[recipe.category]} · ${recipe.minutes} min</span>
+        <span class="recipe-card-cat">${recipeMetaLine(recipe)}</span>
         <span class="recipe-card-title">${recipe.name}</span>
         <span class="recipe-card-macros">${Math.round(per.calories)} kcal · P ${Math.round(per.protein)}g · C ${Math.round(per.carbs)}g · F ${Math.round(per.fat)}g</span>
         <span class="recipe-tags">${recipeTagsHtml(recipe, per)}</span>
@@ -2812,7 +2825,7 @@ function renderRecipeDetail(recipe) {
   el.innerHTML = `
     <button type="button" class="saved-folder-back" id="recipe-back-btn">‹ ${ctx.returnTo === "mealplan-screen" ? "Meal Plan" : "Recipes"}</button>
     <div class="recipe-hero"><span aria-hidden="true">${recipe.emoji}</span></div>
-    <div class="recipe-detail-cat">${RECIPE_CATEGORY_LABELS[recipe.category]} · ${recipe.minutes} min · Serves ${recipe.servings}</div>
+    <div class="recipe-detail-cat">${recipeMetaLine(recipe)} · Serves ${recipe.servings}</div>
     <h2 class="recipe-detail-title">${recipe.name}</h2>
     <div class="recipe-tags">${recipeTagsHtml(recipe, per)}</div>
     ${exclude.length ? `<div class="recipe-left-out-note">Leaving out: ${foodNames(exclude)}. Nutrition below already accounts for it.</div>` : ""}
@@ -2902,6 +2915,12 @@ document.getElementById("recipe-filters").addEventListener("click", e => {
   recipeFilter = chip.dataset.recipeFilter;
   renderRecipeList();
 });
+document.getElementById("recipe-cuisine-filters").addEventListener("click", e => {
+  const chip = e.target.closest("[data-recipe-cuisine]");
+  if (!chip) return;
+  recipeCuisine = chip.dataset.recipeCuisine;
+  renderRecipeList();
+});
 document.getElementById("recipes-list").addEventListener("click", e => {
   const card = e.target.closest("[data-recipe-id]");
   if (card) openRecipe(card.dataset.recipeId);
@@ -2939,7 +2958,7 @@ function setMealPlan(plan) { localStorage.setItem(MEALPLAN_KEY, JSON.stringify(p
 
 function defaultMealPlanSettings() {
   return { days: 7, breakfast: true, lunch: true, dinner: true, snacks: 1,
-           calories: getNutritionTargets().calories, vegetarian: false };
+           calories: getNutritionTargets().calories, vegetarian: false, cuisines: [] };
 }
 
 function canLeaveOut(recipe, food) {
@@ -2978,11 +2997,19 @@ function roundPortion(p) {
   return Math.min(MAX_PORTION, Math.max(MIN_PORTION, Math.round(p * 4) / 4));
 }
 
-function pickPlanMeal(slot, target, settings, dislikes, avoidIds, excludeId) {
-  const options = recipeData.recipes
+function planCandidates(slot, settings, dislikes, excludeId, cuisines) {
+  return recipeData.recipes
     .filter(r => r.category === slot && r.id !== excludeId && (!settings.vegetarian || r.vegetarian))
+    .filter(r => !cuisines.length || cuisines.includes(r.cuisine))
     .map(r => ({ r, leftOut: recipeLeaveOuts(r, dislikes) }))
     .filter(o => o.leftOut);
+}
+
+function pickPlanMeal(slot, target, settings, dislikes, avoidIds, excludeId) {
+  const cuisines = settings.cuisines || [];
+  let options = planCandidates(slot, settings, dislikes, excludeId, cuisines);
+  // Chosen cuisines have nothing for this slot (e.g. a Korean snack) — fall back to any cuisine
+  if (!options.length && cuisines.length) options = planCandidates(slot, settings, dislikes, excludeId, []);
   if (!options.length) return { slot, recipeId: null, target };
   let best = null;
   options.forEach(o => {
@@ -3113,6 +3140,9 @@ function renderMealPlanSetup(plan) {
     <div class="mp-hint">Starts from your Nutrition Goals (${getNutritionTargets().calories} kcal).</div>
     <h3 class="goal-field-label">Diet</h3>
     <div class="chip-group">${chipHtml("mp-veg", "1", "Vegetarian only", s.vegetarian)}</div>
+    <h3 class="goal-field-label">Cuisines</h3>
+    <div class="mp-hint">Pick the cuisines you feel like, or leave it on Any. If a cuisine has no recipe for a meal, we'll use another one.</div>
+    <div class="chip-group mp-cuisines">${chipHtml("mp-cuisine", "any", "Any", !(s.cuisines || []).length)}${recipeCuisines().map(c => chipHtml("mp-cuisine", c, c, (s.cuisines || []).includes(c))).join("")}</div>
     <h3 class="goal-field-label">Foods I don't like <span id="mp-dislike-count" class="mp-dislike-count"></span></h3>
     <div class="mp-hint">Small ingredients get left out of a recipe. Recipes built around a food you don't like are skipped.</div>
     <div class="qa-search-wrap recipes-search-wrap">
@@ -3149,7 +3179,7 @@ function renderMealPlanView(plan) {
     <div class="mp-summary">
       <div>
         <div class="mp-summary-title">${plan.days.length}-Day Meal Plan</div>
-        <div class="mp-summary-sub">~${target.toLocaleString()} kcal a day${plan.settings.vegetarian ? " · Vegetarian" : ""}${plan.dislikes.length ? ` · Avoiding ${plan.dislikes.length} food${plan.dislikes.length === 1 ? "" : "s"}` : ""}</div>
+        <div class="mp-summary-sub">~${target.toLocaleString()} kcal a day${plan.settings.vegetarian ? " · Vegetarian" : ""}${(plan.settings.cuisines || []).length ? ` · ${plan.settings.cuisines.join(", ")}` : ""}${plan.dislikes.length ? ` · Avoiding ${plan.dislikes.length} food${plan.dislikes.length === 1 ? "" : "s"}` : ""}</div>
       </div>
     </div>
     <div class="mp-top-actions">
@@ -3213,6 +3243,11 @@ document.getElementById("mealplan-body").addEventListener("click", e => {
   if (t.dataset.mpSlot) { s[t.dataset.mpSlot] = !s[t.dataset.mpSlot]; return renderMealPlanSetup(plan); }
   if (t.dataset.mpSnacks) { s.snacks = +t.dataset.mpSnacks; return renderMealPlanSetup(plan); }
   if (t.dataset.mpVeg) { s.vegetarian = !s.vegetarian; return renderMealPlanSetup(plan); }
+  if (t.dataset.mpCuisine) {
+    const c = t.dataset.mpCuisine, list = s.cuisines || [];
+    s.cuisines = c === "any" ? [] : list.includes(c) ? list.filter(x => x !== c) : [...list, c];
+    return renderMealPlanSetup(plan);
+  }
   if (t.dataset.mpDislike) {
     const key = t.dataset.mpDislike;
     const list = getDislikes();
