@@ -1486,6 +1486,11 @@ html, body { background: radial-gradient(ellipse at top, #eef0f5 0%, #f3f4f8 60%
 .recipe-tag.veg { background: #dcfce7; color: #16a34a; }
 .recipe-tag.quick { background: #dbeafe; color: #2563eb; }
 .recipe-tag.sauce { background: #ffedd5; color: #c2410c; }
+.recipe-tag.dessert { background: #fce7f3; color: #be185d; }
+.recipes-banner { display: flex; gap: 12px; align-items: center; background: linear-gradient(135deg, #fce7f3, #ede9fe); color: #4c1d95; border-radius: 14px; padding: 12px 14px; margin: 4px 0 8px; font-size: 13px; line-height: 1.4; }
+.recipes-banner[hidden] { display: none; }
+.recipes-banner strong { font-size: 15px; color: #831843; }
+.recipes-banner-emoji { font-size: 30px; }
 .recipe-hero { margin: 8px 0 12px; height: 140px; border-radius: 22px; background: linear-gradient(135deg, #fff7ed, #ffe4ea); display: flex; align-items: center; justify-content: center; font-size: 72px; }
 .recipe-detail-cat { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #ff2d55; }
 .recipe-detail-title { margin: 4px 0 6px; font-size: 24px; font-weight: 800; color: #0f172a; }
