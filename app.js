@@ -1093,17 +1093,23 @@ function prefilledLog(ex) {
   return log;
 }
 
+// Each .screen is its own scroll area (the page itself never scrolls, so the
+// tab bar stays put), so scroll resets target the active screen.
+function activeScreenEl() { return document.querySelector(".screen.active"); }
+function screenScrollY() { const s = activeScreenEl(); return s ? s.scrollTop : 0; }
+function scrollScreenTo(y) { const s = activeScreenEl(); if (s) s.scrollTop = y; }
+
 function openExerciseDetail(ex, returnTo, onDone) {
   stopRestTimer();
   exDetail = {
     ex, returnTo, onDone,
-    scrollY: window.scrollY || 0,
+    scrollY: screenScrollY(),
     tab: "log",
     log: ex._log ? JSON.parse(JSON.stringify(ex._log)) : prefilledLog(ex)
   };
   renderExerciseDetail();
   showTab("exercise-screen");
-  window.scrollTo(0, 0);
+  scrollScreenTo(0);
 }
 
 function closeExerciseDetail(save) {
@@ -1117,7 +1123,7 @@ function closeExerciseDetail(save) {
   exDetail = null;
   showTab(d.returnTo);
   if (d.onDone) d.onDone();
-  window.scrollTo(0, d.scrollY);
+  scrollScreenTo(d.scrollY);
 }
 
 function renderExerciseDetail() {
@@ -1599,7 +1605,7 @@ function renderSaved() {
 }
 
 document.querySelectorAll(".saved-folder").forEach(btn => {
-  btn.addEventListener("click", () => { savedFolder = btn.dataset.folder; renderSaved(); window.scrollTo(0, 0); });
+  btn.addEventListener("click", () => { savedFolder = btn.dataset.folder; renderSaved(); scrollScreenTo(0); });
 });
 document.getElementById("saved-folder-back").addEventListener("click", () => { savedFolder = null; renderSaved(); });
 
@@ -3044,7 +3050,7 @@ function renderRecipeDetail(recipe) {
     recipeOpenId = null;
     if (ctx.returnTo) { recipeContext = null; showTab(ctx.returnTo); }
     else renderRecipes();
-    window.scrollTo(0, 0);
+    scrollScreenTo(0);
   });
   el.querySelector("#recipe-serv-minus").addEventListener("click", () => { recipeServings = Math.max(1, recipeServings - 1); renderRecipeDetail(recipe); });
   el.querySelector("#recipe-serv-plus").addEventListener("click", () => { recipeServings = Math.min(12, recipeServings + 1); renderRecipeDetail(recipe); });
@@ -3089,7 +3095,7 @@ function openRecipe(id) {
   recipeContext = null;
   recipeServings = recipe.servings;
   renderRecipes();
-  window.scrollTo(0, 0);
+  scrollScreenTo(0);
 }
 
 document.getElementById("recipes-btn").addEventListener("click", () => { recipeOpenId = null; recipeContext = null; showTab("recipes-screen"); });
@@ -3445,12 +3451,12 @@ document.getElementById("mealplan-body").addEventListener("click", e => {
     s.calories = Math.min(6000, Math.max(1000, cal || getNutritionTargets().calories));
     setMealPlan(generateMealPlan(s));
     mealPlanEditing = false; mealPlanSettings = null; mealPlanDay = 0;
-    renderMealPlan(); window.scrollTo(0, 0);
+    renderMealPlan(); scrollScreenTo(0);
     return;
   }
   if (t.id === "mp-cancel-btn") { mealPlanEditing = false; mealPlanSettings = null; return renderMealPlan(); }
   if (!plan) return;
-  if (t.id === "mp-edit-btn") { mealPlanEditing = true; mealPlanSettings = { ...plan.settings }; renderMealPlan(); window.scrollTo(0, 0); return; }
+  if (t.id === "mp-edit-btn") { mealPlanEditing = true; mealPlanSettings = { ...plan.settings }; renderMealPlan(); scrollScreenTo(0); return; }
   if (t.id === "mp-new-btn") {
     if (plan.days.some(d => d.meals.some(m => m.logged)) && !confirm("Make a new plan? Your current plan will be replaced (logged meals stay in your food log).")) return;
     setMealPlan(generateMealPlan(plan.settings)); mealPlanDay = 0; return renderMealPlan();
@@ -3482,7 +3488,7 @@ document.getElementById("mealplan-body").addEventListener("click", e => {
       onLogged: () => { const p = getMealPlan(); if (p && p.days[dayIndex]) { p.days[dayIndex].meals[mealIndex].logged = true; setMealPlan(p); } }
     };
     showTab("recipes-screen");
-    window.scrollTo(0, 0);
+    scrollScreenTo(0);
   }
 });
 
