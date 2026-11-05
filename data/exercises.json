@@ -1047,5 +1047,631 @@
     "equipment": "bench",
     "difficulty": "beginner",
     "type": "strength"
+  },
+  {
+    "name": "Leg Press",
+    "muscles": [
+      "quads",
+      "glutes",
+      "hamstrings"
+    ],
+    "equipment": "machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Leg Extension",
+    "muscles": [
+      "quads"
+    ],
+    "equipment": "machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Seated Leg Curl",
+    "muscles": [
+      "hamstrings"
+    ],
+    "equipment": "machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Lying Leg Curl",
+    "muscles": [
+      "hamstrings"
+    ],
+    "equipment": "machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Chest Press Machine",
+    "muscles": [
+      "chest",
+      "triceps",
+      "shoulders"
+    ],
+    "equipment": "machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Pec Deck Fly",
+    "muscles": [
+      "chest"
+    ],
+    "equipment": "machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Shoulder Press Machine",
+    "muscles": [
+      "shoulders",
+      "triceps"
+    ],
+    "equipment": "machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Seated Row Machine",
+    "muscles": [
+      "back",
+      "biceps"
+    ],
+    "equipment": "machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Assisted Pull-Up Machine",
+    "muscles": [
+      "back",
+      "biceps"
+    ],
+    "equipment": "machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Smith Machine Squat",
+    "muscles": [
+      "quads",
+      "glutes"
+    ],
+    "equipment": "machine",
+    "difficulty": "intermediate",
+    "type": "strength"
+  },
+  {
+    "name": "Hack Squat",
+    "muscles": [
+      "quads",
+      "glutes"
+    ],
+    "equipment": "machine",
+    "difficulty": "intermediate",
+    "type": "strength"
+  },
+  {
+    "name": "Hip Abductor Machine",
+    "muscles": [
+      "glutes",
+      "hips"
+    ],
+    "equipment": "machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Hip Adductor Machine",
+    "muscles": [
+      "inner thighs"
+    ],
+    "equipment": "machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Standing Calf Raise Machine",
+    "muscles": [
+      "calves"
+    ],
+    "equipment": "machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Seated Calf Raise",
+    "muscles": [
+      "calves"
+    ],
+    "equipment": "machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Reverse Pec Deck",
+    "muscles": [
+      "shoulders",
+      "back"
+    ],
+    "equipment": "machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Glute Kickback Machine",
+    "muscles": [
+      "glutes"
+    ],
+    "equipment": "machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Back Extension (45°)",
+    "muscles": [
+      "lower back",
+      "glutes",
+      "hamstrings"
+    ],
+    "equipment": "machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Smith Machine Bench Press",
+    "muscles": [
+      "chest",
+      "triceps",
+      "shoulders"
+    ],
+    "equipment": "machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Machine Bicep Curl",
+    "muscles": [
+      "biceps"
+    ],
+    "equipment": "machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Machine Tricep Dip",
+    "muscles": [
+      "triceps",
+      "chest"
+    ],
+    "equipment": "machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Barbell Shrug",
+    "muscles": [
+      "back",
+      "shoulders"
+    ],
+    "equipment": "barbell",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Close-Grip Bench Press",
+    "muscles": [
+      "triceps",
+      "chest"
+    ],
+    "equipment": "barbell",
+    "difficulty": "intermediate",
+    "type": "strength"
+  },
+  {
+    "name": "Incline Barbell Bench Press",
+    "muscles": [
+      "chest",
+      "shoulders",
+      "triceps"
+    ],
+    "equipment": "barbell",
+    "difficulty": "intermediate",
+    "type": "strength"
+  },
+  {
+    "name": "Barbell Good Morning",
+    "muscles": [
+      "hamstrings",
+      "lower back"
+    ],
+    "equipment": "barbell",
+    "difficulty": "intermediate",
+    "type": "strength"
+  },
+  {
+    "name": "Sumo Deadlift",
+    "muscles": [
+      "glutes",
+      "hamstrings",
+      "quads"
+    ],
+    "equipment": "barbell",
+    "difficulty": "intermediate",
+    "type": "strength"
+  },
+  {
+    "name": "EZ-Bar Skull Crusher",
+    "muscles": [
+      "triceps"
+    ],
+    "equipment": "barbell",
+    "difficulty": "intermediate",
+    "type": "strength"
+  },
+  {
+    "name": "Barbell Glute Bridge",
+    "muscles": [
+      "glutes",
+      "hamstrings"
+    ],
+    "equipment": "barbell",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Barbell Calf Raise",
+    "muscles": [
+      "calves"
+    ],
+    "equipment": "barbell",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Dumbbell Shrug",
+    "muscles": [
+      "back",
+      "shoulders"
+    ],
+    "equipment": "dumbbells",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Dumbbell Calf Raise",
+    "muscles": [
+      "calves"
+    ],
+    "equipment": "dumbbells",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Dumbbell Reverse Fly",
+    "muscles": [
+      "shoulders",
+      "back"
+    ],
+    "equipment": "dumbbells",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Dumbbell Overhead Tricep Extension",
+    "muscles": [
+      "triceps"
+    ],
+    "equipment": "dumbbells",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Dumbbell Concentration Curl",
+    "muscles": [
+      "biceps"
+    ],
+    "equipment": "dumbbells",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Farmer's Carry",
+    "muscles": [
+      "forearms",
+      "core",
+      "back"
+    ],
+    "equipment": "dumbbells",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Dumbbell Russian Twist",
+    "muscles": [
+      "obliques",
+      "core"
+    ],
+    "equipment": "dumbbells",
+    "difficulty": "beginner",
+    "type": "core"
+  },
+  {
+    "name": "Dumbbell Reverse Lunge",
+    "muscles": [
+      "quads",
+      "glutes"
+    ],
+    "equipment": "dumbbells",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Cable Crunch",
+    "muscles": [
+      "core"
+    ],
+    "equipment": "cable machine",
+    "difficulty": "beginner",
+    "type": "core"
+  },
+  {
+    "name": "Straight-Arm Pulldown",
+    "muscles": [
+      "back"
+    ],
+    "equipment": "cable machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Cable Pull-Through",
+    "muscles": [
+      "glutes",
+      "hamstrings"
+    ],
+    "equipment": "cable machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Cable Upright Row",
+    "muscles": [
+      "shoulders"
+    ],
+    "equipment": "cable machine",
+    "difficulty": "intermediate",
+    "type": "strength"
+  },
+  {
+    "name": "Cable Hammer Curl (rope)",
+    "muscles": [
+      "biceps",
+      "forearms"
+    ],
+    "equipment": "cable machine",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Incline Dumbbell Curl",
+    "muscles": [
+      "biceps"
+    ],
+    "equipment": "bench",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Chest-Supported Dumbbell Row",
+    "muscles": [
+      "back",
+      "biceps"
+    ],
+    "equipment": "bench",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Dumbbell Skull Crusher",
+    "muscles": [
+      "triceps"
+    ],
+    "equipment": "bench",
+    "difficulty": "intermediate",
+    "type": "strength"
+  },
+  {
+    "name": "Decline Sit-Up",
+    "muscles": [
+      "core"
+    ],
+    "equipment": "bench",
+    "difficulty": "intermediate",
+    "type": "core"
+  },
+  {
+    "name": "Calf Raise",
+    "muscles": [
+      "calves"
+    ],
+    "equipment": "bodyweight",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Dead Bug",
+    "muscles": [
+      "core"
+    ],
+    "equipment": "bodyweight",
+    "difficulty": "beginner",
+    "type": "core"
+  },
+  {
+    "name": "Bird Dog",
+    "muscles": [
+      "core",
+      "lower back"
+    ],
+    "equipment": "bodyweight",
+    "difficulty": "beginner",
+    "type": "core"
+  },
+  {
+    "name": "Hollow Body Hold",
+    "muscles": [
+      "core"
+    ],
+    "equipment": "bodyweight",
+    "difficulty": "intermediate",
+    "type": "core"
+  },
+  {
+    "name": "Russian Twist",
+    "muscles": [
+      "obliques",
+      "core"
+    ],
+    "equipment": "bodyweight",
+    "difficulty": "beginner",
+    "type": "core"
+  },
+  {
+    "name": "Reverse Lunge",
+    "muscles": [
+      "quads",
+      "glutes"
+    ],
+    "equipment": "bodyweight",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Lying Leg Raise",
+    "muscles": [
+      "core",
+      "hip flexors"
+    ],
+    "equipment": "bodyweight",
+    "difficulty": "beginner",
+    "type": "core"
+  },
+  {
+    "name": "Inchworm",
+    "muscles": [
+      "hamstrings",
+      "core",
+      "shoulders"
+    ],
+    "equipment": "bodyweight",
+    "difficulty": "beginner",
+    "type": "mobility"
+  },
+  {
+    "name": "Hamstring Stretch",
+    "muscles": [
+      "hamstrings"
+    ],
+    "equipment": "bodyweight",
+    "difficulty": "beginner",
+    "type": "mobility"
+  },
+  {
+    "name": "Chest Doorway Stretch",
+    "muscles": [
+      "chest",
+      "shoulders"
+    ],
+    "equipment": "bodyweight",
+    "difficulty": "beginner",
+    "type": "mobility"
+  },
+  {
+    "name": "Bear Crawl",
+    "muscles": [
+      "core",
+      "shoulders",
+      "quads"
+    ],
+    "equipment": "bodyweight",
+    "difficulty": "intermediate",
+    "type": "core"
+  },
+  {
+    "name": "Inverted Row",
+    "muscles": [
+      "back",
+      "biceps"
+    ],
+    "equipment": "pullup bar",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Hanging Leg Raise",
+    "muscles": [
+      "core",
+      "hip flexors"
+    ],
+    "equipment": "pullup bar",
+    "difficulty": "intermediate",
+    "type": "core"
+  },
+  {
+    "name": "Dead Hang",
+    "muscles": [
+      "forearms",
+      "back"
+    ],
+    "equipment": "pullup bar",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Kettlebell High Pull",
+    "muscles": [
+      "glutes",
+      "shoulders",
+      "back"
+    ],
+    "equipment": "kettlebell",
+    "difficulty": "intermediate",
+    "type": "strength"
+  },
+  {
+    "name": "Kettlebell Windmill",
+    "muscles": [
+      "obliques",
+      "core",
+      "shoulders"
+    ],
+    "equipment": "kettlebell",
+    "difficulty": "intermediate",
+    "type": "core"
+  },
+  {
+    "name": "Band Face Pull",
+    "muscles": [
+      "shoulders",
+      "back"
+    ],
+    "equipment": "bands",
+    "difficulty": "beginner",
+    "type": "strength"
+  },
+  {
+    "name": "Band Glute Kickback",
+    "muscles": [
+      "glutes"
+    ],
+    "equipment": "bands",
+    "difficulty": "beginner",
+    "type": "strength"
   }
 ]
