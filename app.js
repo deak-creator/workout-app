@@ -2855,7 +2855,7 @@ document.getElementById("qa-log-only-btn").addEventListener("click", () => {
 // ============================================================
 const RECIPE_FILTERS = [
   ["all", "All"], ["breakfast", "Breakfast"], ["lunch", "Lunch"], ["dinner", "Dinner"], ["snack", "Snacks"],
-  ["protein", "High Protein"], ["vegetarian", "Vegetarian"], ["quick", "Under 15 min"], ["sauce", "Homemade Sauce"]
+  ["dessert", "Protein Desserts"], ["protein", "High Protein"], ["vegetarian", "Vegetarian"], ["quick", "Under 15 min"], ["sauce", "Homemade Sauce"]
 ];
 const RECIPE_GROUP_FALLBACK = "For the sauce";
 const RECIPE_CATEGORY_LABELS = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snack" };
@@ -2902,10 +2902,11 @@ function recipeMatches(recipe) {
   if (f === "vegetarian" && !recipe.vegetarian) return false;
   if (f === "quick" && recipe.minutes > 15) return false;
   if (f === "sauce" && !recipe.homemadeSauce) return false;
+  if (f === "dessert" && !recipe.dessert) return false;
   if (recipeCuisine !== "all" && recipe.cuisine !== recipeCuisine) return false;
   const q = recipeQuery.trim().toLowerCase();
   if (!q) return true;
-  const haystack = [recipe.name, recipe.cuisine || "", recipe.homemadeSauce ? "homemade sauce" : "", ...recipe.ingredients.map(i => i.label), ...recipe.ingredients.map(i => recipeData.foods[i.food].name)]
+  const haystack = [recipe.name, recipe.cuisine || "", recipe.homemadeSauce ? "homemade sauce" : "", recipe.dessert ? "dessert desserts sweet treat" : "", ...recipe.ingredients.map(i => i.label), ...recipe.ingredients.map(i => recipeData.foods[i.food].name)]
     .join(" ").toLowerCase();
   return q.split(/\s+/).every(word => haystack.includes(word));
 }
@@ -2920,6 +2921,7 @@ function recipeMetaLine(recipe) {
 
 function recipeTagsHtml(recipe, per) {
   const tags = [];
+  if (recipe.dessert) tags.push(`<span class="recipe-tag dessert">Protein dessert</span>`);
   if (recipeIsHighProtein(per)) tags.push(`<span class="recipe-tag protein">High protein</span>`);
   if (recipe.vegetarian) tags.push(`<span class="recipe-tag veg">Vegetarian</span>`);
   if (recipe.minutes <= 15) tags.push(`<span class="recipe-tag quick">Quick</span>`);
@@ -2965,6 +2967,14 @@ function renderRecipes() {
   else renderRecipeList();
 }
 
+// Scroll a horizontal chip row so its selected chip isn't hidden off the edge.
+function keepSelectedChipVisible(row) {
+  const chip = row.querySelector(".chip.selected");
+  if (!chip) return;
+  const r = row.getBoundingClientRect(), c = chip.getBoundingClientRect();
+  if (c.left < r.left || c.right > r.right) row.scrollLeft += c.left - r.left - 16;
+}
+
 function renderRecipeList() {
   document.getElementById("recipe-filters").innerHTML = RECIPE_FILTERS.map(([key, label]) =>
     `<button type="button" class="chip${recipeFilter === key ? " selected" : ""}" data-recipe-filter="${key}" role="tab" aria-selected="${recipeFilter === key}">${label}</button>`
@@ -2972,8 +2982,16 @@ function renderRecipeList() {
   document.getElementById("recipe-cuisine-filters").innerHTML = [["all", "All cuisines"], ...recipeCuisines().map(c => [c, c])].map(([key, label]) =>
     `<button type="button" class="chip${recipeCuisine === key ? " selected" : ""}" data-recipe-cuisine="${key}" role="tab" aria-selected="${recipeCuisine === key}">${label}</button>`
   ).join("");
+  keepSelectedChipVisible(document.getElementById("recipe-filters"));
+  keepSelectedChipVisible(document.getElementById("recipe-cuisine-filters"));
   const matches = recipeData.recipes.filter(recipeMatches);
   document.getElementById("recipes-count").textContent = `${matches.length} recipe${matches.length === 1 ? "" : "s"}`;
+  const banner = document.getElementById("recipes-banner");
+  banner.hidden = recipeFilter !== "dessert";
+  if (!banner.hidden) {
+    const total = recipeData.recipes.filter(r => r.dessert).length;
+    banner.innerHTML = `<span class="recipes-banner-emoji" aria-hidden="true">🍨</span><span><strong>High-protein desserts</strong><br>${total} sweet treats, every one packed with protein – cheesecakes, brownies, mousses, ice creams, bars &amp; more.</span>`;
+  }
   const listEl = document.getElementById("recipes-list");
   if (!matches.length) {
     listEl.innerHTML = `<div class="empty-state">No recipes match.<br>Try a different search or filter.</div>`;
@@ -3111,7 +3129,15 @@ function openRecipe(id) {
   scrollScreenTo(0);
 }
 
-document.getElementById("recipes-btn").addEventListener("click", () => { recipeOpenId = null; recipeContext = null; showTab("recipes-screen"); });
+document.getElementById("recipes-btn").addEventListener("click", () => {
+  if (recipeFilter === "dessert") recipeFilter = "all";
+  recipeOpenId = null; recipeContext = null; showTab("recipes-screen");
+});
+document.getElementById("desserts-btn").addEventListener("click", () => {
+  recipeFilter = "dessert"; recipeCuisine = "all"; recipeQuery = "";
+  const search = document.getElementById("recipes-search"); if (search) search.value = "";
+  recipeOpenId = null; recipeContext = null; showTab("recipes-screen");
+});
 document.getElementById("recipes-back-btn").addEventListener("click", () => showTab("nutrition-screen"));
 document.getElementById("recipes-search").addEventListener("input", e => { recipeQuery = e.target.value; if (recipeData) renderRecipeList(); });
 document.getElementById("recipe-filters").addEventListener("click", e => {
