@@ -1747,8 +1747,22 @@ function getCalorieGoal() {
   return getNutritionTargets().calories;
 }
 
+// Daily calorie change per goal pace (≈7,700 kcal per kg of body weight)
+const GOAL_PACES = {
+  lose: [["gentle", -250, "Gentle", "≈0.25 kg/week"], ["steady", -500, "Steady", "≈0.5 kg/week"], ["fast", -750, "Fast", "≈0.75 kg/week"]],
+  gain: [["lean", 200, "Lean", "≈0.2 kg/week, least fat"], ["steady", 300, "Steady", "≈0.3 kg/week"], ["fast", 500, "Faster", "≈0.5 kg/week"]]
+};
+const ACTIVITY_LABELS = { "1.2": "Sedentary", "1.375": "Lightly Active", "1.55": "Moderately Active", "1.725": "Active", "1.9": "Very Active" };
+
+function goalAdjustment(goalType, pace) {
+  const list = GOAL_PACES[goalType];
+  if (!list) return 0;
+  const found = list.find(p => p[0] === pace) || list[1];
+  return found[1];
+}
+
 // Mifflin-St Jeor BMR -> TDEE -> goal-adjusted calories -> macro split
-function calculateTargets({ sex, age, weightKg, heightCm, activityFactor, goalType }) {
+function calculateTargets({ sex, age, weightKg, heightCm, activityFactor, goalType, pace }) {
   const bmr = sex === "female"
     ? 10 * weightKg + 6.25 * heightCm - 5 * age - 161
     : 10 * weightKg + 6.25 * heightCm - 5 * age + 5;
@@ -1759,11 +1773,11 @@ function calculateTargets({ sex, age, weightKg, heightCm, activityFactor, goalTy
   let fatPct = 0.25;
 
   if (goalType === "lose") {
-    calories = tdee - 500;
+    calories = tdee + goalAdjustment("lose", pace);
     proteinPerKg = 2.0; // higher protein to preserve muscle in a deficit
     fatPct = 0.25;
   } else if (goalType === "gain") {
-    calories = tdee + 300;
+    calories = tdee + goalAdjustment("gain", pace);
     proteinPerKg = 1.8;
     fatPct = 0.22;
   } else {
@@ -1779,7 +1793,7 @@ function calculateTargets({ sex, age, weightKg, heightCm, activityFactor, goalTy
   const fatCals = fat * 9;
   const carbs = Math.max(0, Math.round((calories - proteinCals - fatCals) / 4));
 
-  return { calories, protein, carbs, fat, goalType };
+  return { calories, protein, carbs, fat, goalType, bmr: Math.round(bmr), tdee: Math.round(tdee) };
 }
 
 function sumNutrients(entries) {
@@ -1904,9 +1918,30 @@ function addFoodEntry(entry) {
 }
 
 // ---------- nutrition goal modal ----------
-const goalModalState = { goalmode: "calculate", nutriGoal: "maintain", sex: "male", activity: "1.375" };
+const goalModalState = { goalmode: "calculate", nutriGoal: "maintain", sex: "male", activity: "1.375", pace: "steady" };
 
-document.querySelectorAll('[data-field="goalmode"], [data-field="nutriGoal"], [data-field="sex"], [data-field="activity"]').forEach(group => {
+function selectGoalChip(field, value) {
+  const group = document.querySelector(`[data-field="${field}"]`);
+  if (!group) return;
+  group.querySelectorAll(".chip, .mode-btn").forEach(c => {
+    const on = c.dataset.value === String(value);
+    c.classList.toggle("selected", on);
+    c.setAttribute("aria-selected", String(on));
+  });
+}
+
+function renderGoalPace() {
+  const list = GOAL_PACES[goalModalState.nutriGoal];
+  const wrap = document.getElementById("goal-pace-wrap");
+  wrap.hidden = !list;
+  if (!list) return;
+  if (!list.some(p => p[0] === goalModalState.pace)) goalModalState.pace = "steady";
+  document.getElementById("goal-pace-label").textContent = goalModalState.nutriGoal === "lose" ? "How fast do you want to lose?" : "How fast do you want to gain?";
+  document.getElementById("goal-pace").innerHTML = list.map(([key, kcal, label, rate]) =>
+    `<button type="button" class="chip pace-opt${goalModalState.pace === key ? " selected" : ""}" data-value="${key}"><span class="ao-title">${label}</span><span class="ao-desc">${kcal > 0 ? "+" : "−"}${Math.abs(kcal)} kcal · ${rate}</span></button>`).join("");
+}
+
+document.querySelectorAll('[data-field="goalmode"], [data-field="nutriGoal"], [data-field="sex"], [data-field="activity"], [data-field="pace"]').forEach(group => {
   const field = group.dataset.field;
   group.addEventListener("click", e => {
     const btn = e.target.closest(".chip, .mode-btn");
@@ -1924,6 +1959,7 @@ document.querySelectorAll('[data-field="goalmode"], [data-field="nutriGoal"], [d
       document.getElementById("goal-calc-fields").hidden = isManual;
       document.getElementById("goal-manual-fields").hidden = !isManual;
     }
+    if (field === "nutriGoal") { goalModalState.pace = "steady"; renderGoalPace(); }
     updateGoalPreview();
   });
 });
@@ -1942,9 +1978,19 @@ function updateGoalPreview() {
     sex: goalModalState.sex,
     age, weightKg, heightCm,
     activityFactor: parseFloat(goalModalState.activity),
-    goalType: goalModalState.nutriGoal
+    goalType: goalModalState.nutriGoal,
+    pace: goalModalState.pace
   });
-  previewEl.innerHTML = `Target: <strong>${t.calories} kcal</strong><br>Protein <strong>${t.protein}g</strong> · Carbs <strong>${t.carbs}g</strong> · Fat <strong>${t.fat}g</strong>`;
+  const adj = t.calories - t.tdee;
+  const goalName = { lose: "Lose fat", gain: "Build muscle", maintain: "Maintain" }[goalModalState.nutriGoal];
+  previewEl.innerHTML = `
+    <div class="gp-row"><span>Resting burn (BMR)</span><span>${t.bmr.toLocaleString()} kcal</span></div>
+    <div class="gp-row"><span>× ${goalModalState.activity} ${ACTIVITY_LABELS[goalModalState.activity]}</span><span>${t.tdee.toLocaleString()} kcal</span></div>
+    <div class="gp-row gp-sub"><span>Maintenance (what you burn a day)</span></div>
+    <div class="gp-row"><span>${goalName}</span><span>${adj === 0 ? "±0" : (adj > 0 ? "+" : "−") + Math.abs(adj).toLocaleString()} kcal</span></div>
+    <div class="gp-row gp-total"><span>Daily target</span><strong>${t.calories.toLocaleString()} kcal</strong></div>
+    <div class="gp-macros">Protein <strong>${t.protein}g</strong> · Carbs <strong>${t.carbs}g</strong> · Fat <strong>${t.fat}g</strong></div>
+    ${t.calories === 1200 && t.tdee + adj < 1200 ? `<div class="gp-note">Raised to the 1,200 kcal safe minimum.</div>` : ""}`;
 }
 
 ["goal-age", "goal-weight", "goal-height"].forEach(id => {
@@ -1957,6 +2003,16 @@ document.getElementById("cal-goal-btn").addEventListener("click", () => {
   document.getElementById("manual-protein").value = targets.protein;
   document.getElementById("manual-carbs").value = targets.carbs;
   document.getElementById("manual-fat").value = targets.fat;
+  const prof = targets.profile;
+  if (prof) {
+    Object.assign(goalModalState, { sex: prof.sex, activity: prof.activity, nutriGoal: prof.goal, pace: prof.pace || "steady" });
+    document.getElementById("goal-age").value = prof.age;
+    document.getElementById("goal-weight").value = prof.weightKg;
+    document.getElementById("goal-height").value = prof.heightCm;
+  }
+  ["sex", "activity", "nutriGoal"].forEach(f => selectGoalChip(f, goalModalState[f]));
+  renderGoalPace();
+  updateGoalPreview();
   document.getElementById("goal-modal").hidden = false;
 });
 document.getElementById("goal-cancel-btn").addEventListener("click", () => {
@@ -1984,8 +2040,11 @@ document.getElementById("goal-save-btn").addEventListener("click", () => {
       sex: goalModalState.sex,
       age, weightKg, heightCm,
       activityFactor: parseFloat(goalModalState.activity),
-      goalType: goalModalState.nutriGoal
+      goalType: goalModalState.nutriGoal,
+      pace: goalModalState.pace
     });
+    targets.profile = { sex: goalModalState.sex, age, weightKg, heightCm, activity: goalModalState.activity,
+                        goal: goalModalState.nutriGoal, pace: goalModalState.pace };
   }
   setNutritionTargets(targets);
   document.getElementById("goal-modal").hidden = true;
