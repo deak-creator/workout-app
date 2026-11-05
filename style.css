@@ -1582,3 +1582,16 @@ html, body { background: radial-gradient(ellipse at top, #eef0f5 0%, #f3f4f8 60%
 .goal-preview .gp-note { margin-top: 6px; font-size: 12px; color: #b45309; }
 .goal-input-grid label { min-width: 0; }
 .goal-input-grid input { width: 100%; min-width: 0; box-sizing: border-box; }
+
+/* ===== v36: build your own workout + exercise library filters ===== */
+.addex-filters { margin: 8px 0 2px; }
+.addex-item.added { background: #fff1f4; border-color: #ffb3c1; }
+.addex-item.added .addex-plus { background: #ff2d55; color: #fff; }
+.addex-done { position: sticky; bottom: 0; margin-top: 10px; }
+.custom-tools { display: flex; gap: 4px; margin-top: 4px; }
+.custom-tools button { border: 1px solid #dde1ea; background: #eef0f5; color: #475569; border-radius: 8px; width: 28px; height: 28px; font-size: 13px; cursor: pointer; }
+.custom-tools .remove-btn { color: #e11d48; }
+.custom-empty { margin: 14px 0; }
+#custom-name { width: 100%; box-sizing: border-box; }
+.addex-done { width: 100%; }
+#regen-btn[hidden] { display: none; }
