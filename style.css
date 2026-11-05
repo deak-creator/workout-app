@@ -11,6 +11,7 @@ html, body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh; /* visible height: on iPhone Safari 100vh is taller than the screen, which let the page scroll the tab bar away */
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -1675,3 +1676,7 @@ html, body { background: radial-gradient(ellipse at top, #eef0f5 0%, #f3f4f8 60%
 .bp-cardio-types .chip { font-size: 13px; padding: 7px 12px; }
 .bp-tips { margin: 0 0 6px; padding-left: 18px; font-size: 13px; color: #334155; line-height: 1.5; }
 .beer-adj-note { font-size: 12px; color: #b45309; margin-top: 6px; text-align: center; }
+
+/* ===== v39: keep the bottom tab bar fixed in place ===== */
+html, body { overflow: hidden; }
+.screen { overscroll-behavior-y: contain; }
