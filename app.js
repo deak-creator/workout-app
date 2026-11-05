@@ -1670,7 +1670,8 @@ const titleByScreen = {
   "saved-screen": "Saved",
   "recovery-screen": "Recovery",
   "exercise-screen": "Exercise",
-  "recipes-screen": "Recipes"
+  "recipes-screen": "Recipes",
+  "mealplan-screen": "Meal Plan"
 };
 const _origShowTab = showTab;
 showTab = function (id) {
@@ -1683,8 +1684,9 @@ showTab = function (id) {
   if (id === "nutrition-screen") renderFoodLog();
   if (id === "recovery-screen") renderRecovery();
   if (id === "recipes-screen") renderRecipes();
+  if (id === "mealplan-screen") renderMealPlan();
   // sync bottom tabbar highlight for screens not directly in tabbar (workout/plan detail views)
-  const tabMap = { "setup-screen": "setup-screen", "workout-screen": "setup-screen", "plan-screen": "setup-screen", "exercise-screen": "setup-screen", "recipes-screen": "nutrition-screen" };
+  const tabMap = { "setup-screen": "setup-screen", "workout-screen": "setup-screen", "plan-screen": "setup-screen", "exercise-screen": "setup-screen", "recipes-screen": "nutrition-screen", "mealplan-screen": "nutrition-screen" };
   const activeTabId = tabMap[id] || id;
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === activeTabId));
 };
@@ -2672,6 +2674,7 @@ let recipeFilter = "all";
 let recipeQuery = "";
 let recipeOpenId = null;    // recipe shown in the detail view, null = list view
 let recipeServings = 1;     // servings the user is making (scales ingredient amounts)
+let recipeContext = null;   // set when opened from the meal plan: { exclude, logPortion, returnTo, onLogged }
 
 function loadRecipes() {
   if (!recipeDataPromise) {
@@ -2683,9 +2686,9 @@ function loadRecipes() {
   return recipeDataPromise;
 }
 
-function recipePerServing(recipe) {
+function recipePerServing(recipe, exclude = []) {
   const per = { calories: 0, protein: 0, carbs: 0, fat: 0 };
-  recipe.ingredients.forEach(i => {
+  recipe.ingredients.filter(i => !exclude.includes(i.food)).forEach(i => {
     const p100 = recipeData.foods[i.food].per100;
     Object.keys(per).forEach(k => { per[k] += p100[k] * i.grams / 100; });
   });
@@ -2719,8 +2722,22 @@ function recipeTagsHtml(recipe, per) {
   return tags.join("");
 }
 
-function recipeIsSaved(recipe) {
-  return qaGetSavedMeals().some(m => m.recipeId === recipe.id);
+function recipeSavedId(recipe, exclude = []) {
+  return exclude.length ? `${recipe.id}|without:${[...exclude].sort().join(",")}` : recipe.id;
+}
+
+function recipeIsSaved(recipe, exclude = []) {
+  const id = recipeSavedId(recipe, exclude);
+  return qaGetSavedMeals().some(m => m.recipeId === id);
+}
+
+function foodNames(keys) {
+  return keys.map(k => recipeData.foods[k].name.toLowerCase()).join(", ");
+}
+
+function formatServings(n) {
+  const s = formatRecipeQty(n, "");
+  return `${s} serving${n <= 1 ? "" : "s"}`;
 }
 
 function renderRecipes() {
@@ -2785,16 +2802,20 @@ function recipeIngredientText(ing, scale) {
 }
 
 function renderRecipeDetail(recipe) {
-  const per = recipePerServing(recipe);
+  const ctx = recipeContext || {};
+  const exclude = ctx.exclude || [];
+  const logPortion = ctx.logPortion || 1;
+  const per = recipePerServing(recipe, exclude);
   const scale = recipeServings / recipe.servings;
-  const saved = recipeIsSaved(recipe);
+  const saved = recipeIsSaved(recipe, exclude);
   const el = document.getElementById("recipe-detail");
   el.innerHTML = `
-    <button type="button" class="saved-folder-back" id="recipe-back-btn">‹ Recipes</button>
+    <button type="button" class="saved-folder-back" id="recipe-back-btn">‹ ${ctx.returnTo === "mealplan-screen" ? "Meal Plan" : "Recipes"}</button>
     <div class="recipe-hero"><span aria-hidden="true">${recipe.emoji}</span></div>
     <div class="recipe-detail-cat">${RECIPE_CATEGORY_LABELS[recipe.category]} · ${recipe.minutes} min · Serves ${recipe.servings}</div>
     <h2 class="recipe-detail-title">${recipe.name}</h2>
     <div class="recipe-tags">${recipeTagsHtml(recipe, per)}</div>
+    ${exclude.length ? `<div class="recipe-left-out-note">Leaving out: ${foodNames(exclude)}. Nutrition below already accounts for it.</div>` : ""}
     <div class="recipe-macro-grid" aria-label="Nutrition per serving">
       <div class="recipe-macro"><span class="v">${Math.round(per.calories)}</span><span class="l">kcal</span></div>
       <div class="recipe-macro"><span class="v">${Math.round(per.protein)}g</span><span class="l">Protein</span></div>
@@ -2803,7 +2824,7 @@ function renderRecipeDetail(recipe) {
     </div>
     <div class="recipe-per-note">Per serving</div>
     <div class="recipe-actions">
-      <button type="button" class="primary-btn" id="recipe-log-btn">Log 1 Serving</button>
+      <button type="button" class="primary-btn" id="recipe-log-btn">Log ${formatServings(logPortion).replace(" serving", " Serving")}</button>
       <button type="button" class="primary-btn secondary" id="recipe-save-btn"${saved ? " disabled" : ""}>${saved ? "✓ In My Meals" : "Save to My Meals"}</button>
     </div>
     <div class="recipe-section-head">
@@ -2814,55 +2835,65 @@ function renderRecipeDetail(recipe) {
         <button type="button" class="icon-btn" id="recipe-serv-plus" aria-label="More servings">+</button>
       </div>
     </div>
-    <ul class="recipe-ingredients">${recipe.ingredients.map(i => `<li>${recipeIngredientText(i, scale)}</li>`).join("")}</ul>
+    <ul class="recipe-ingredients">${recipe.ingredients.map(i => exclude.includes(i.food)
+      ? `<li class="left-out"><span class="recipe-ing-struck">${recipeIngredientText(i, scale)}</span><span class="recipe-left-out-tag">Left out</span></li>`
+      : `<li>${recipeIngredientText(i, scale)}</li>`).join("")}</ul>
     <h3 class="section-heading">Method</h3>
     <ol class="recipe-steps">${recipe.steps.map(s => `<li>${s}</li>`).join("")}</ol>`;
 
-  el.querySelector("#recipe-back-btn").addEventListener("click", () => { recipeOpenId = null; renderRecipes(); window.scrollTo(0, 0); });
+  el.querySelector("#recipe-back-btn").addEventListener("click", () => {
+    recipeOpenId = null;
+    if (ctx.returnTo) { recipeContext = null; showTab(ctx.returnTo); }
+    else renderRecipes();
+    window.scrollTo(0, 0);
+  });
   el.querySelector("#recipe-serv-minus").addEventListener("click", () => { recipeServings = Math.max(1, recipeServings - 1); renderRecipeDetail(recipe); });
   el.querySelector("#recipe-serv-plus").addEventListener("click", () => { recipeServings = Math.min(12, recipeServings + 1); renderRecipeDetail(recipe); });
   el.querySelector("#recipe-log-btn").addEventListener("click", e => {
     addFoodEntry({
-      name: recipe.name, brand: "Recipe", image: "", serving: "1 serving",
-      calories: per.calories, protein: per.protein, carbs: per.carbs, fat: per.fat
+      name: recipe.name, brand: "Recipe", image: "", serving: formatServings(logPortion),
+      calories: per.calories * logPortion, protein: per.protein * logPortion, carbs: per.carbs * logPortion, fat: per.fat * logPortion
     });
     updateHomeStats();
+    if (ctx.onLogged) ctx.onLogged();
     e.currentTarget.textContent = "✓ Logged to today";
     e.currentTarget.classList.add("done");
   });
   el.querySelector("#recipe-save-btn").addEventListener("click", () => {
-    if (recipeIsSaved(recipe)) return;
+    if (recipeIsSaved(recipe, exclude)) return;
     const meals = qaGetSavedMeals();
-    meals.unshift(recipeToMeal(recipe));
+    meals.unshift(recipeToMeal(recipe, exclude));
     qaSetSavedMeals(meals);
     renderRecipeDetail(recipe);
   });
 }
 
 // saved-meal shape matches Quick Add meals so it can be logged and edited from Saved › Meals
-function recipeToMeal(recipe) {
-  const ingredients = recipe.ingredients.map(i => {
+function recipeToMeal(recipe, exclude = []) {
+  const ingredients = recipe.ingredients.filter(i => !exclude.includes(i.food)).map(i => {
     const food = recipeData.foods[i.food];
     return { name: food.name, brand: "", grams: i.grams, per100: { ...food.per100 }, servingGrams: 100,
              servingLabel: "serving (100 g)", qty: i.grams, unit: "g" };
   });
-  const per = recipePerServing(recipe);
+  const per = recipePerServing(recipe, exclude);
   const totals = {};
   Object.keys(per).forEach(k => { totals[k] = per[k] * recipe.servings; });
-  return { name: recipe.name, servings: recipe.servings, ingredients, totals, perServing: per,
-           recipeId: recipe.id, createdAt: new Date().toISOString() };
+  const name = exclude.length ? `${recipe.name} (no ${foodNames(exclude)})` : recipe.name;
+  return { name, servings: recipe.servings, ingredients, totals, perServing: per,
+           recipeId: recipeSavedId(recipe, exclude), createdAt: new Date().toISOString() };
 }
 
 function openRecipe(id) {
   const recipe = recipeData.recipes.find(r => r.id === id);
   if (!recipe) return;
   recipeOpenId = id;
+  recipeContext = null;
   recipeServings = recipe.servings;
   renderRecipes();
   window.scrollTo(0, 0);
 }
 
-document.getElementById("recipes-btn").addEventListener("click", () => { recipeOpenId = null; showTab("recipes-screen"); });
+document.getElementById("recipes-btn").addEventListener("click", () => { recipeOpenId = null; recipeContext = null; showTab("recipes-screen"); });
 document.getElementById("recipes-back-btn").addEventListener("click", () => showTab("nutrition-screen"));
 document.getElementById("recipes-search").addEventListener("input", e => { recipeQuery = e.target.value; if (recipeData) renderRecipeList(); });
 document.getElementById("recipe-filters").addEventListener("click", e => {
@@ -2874,6 +2905,364 @@ document.getElementById("recipe-filters").addEventListener("click", e => {
 document.getElementById("recipes-list").addEventListener("click", e => {
   const card = e.target.closest("[data-recipe-id]");
   if (card) openRecipe(card.dataset.recipeId);
+});
+
+// ============================================================
+// MEAL PLAN — builds days of recipes around a calorie target, avoiding disliked foods.
+// A disliked minor ingredient is left out of the recipe; a disliked main ingredient rules the recipe out.
+// ============================================================
+const MEALPLAN_KEY = "mealPlan";
+const DISLIKES_KEY = "foodDislikes";
+const MEAL_SLOTS = {
+  breakfast: { label: "Breakfast", weight: 3 },
+  lunch: { label: "Lunch", weight: 3.5 },
+  dinner: { label: "Dinner", weight: 4 },
+  snack: { label: "Snack", weight: 1.5 }
+};
+const LEAVE_OUT_MAX_KCAL_SHARE = 0.2;   // ingredient gives under 20% of the recipe's calories…
+const LEAVE_OUT_MAX_GRAM_SHARE = 0.35;  // …and under 35% of its weight, so the dish still works without it
+const MIN_PORTION = 0.5, MAX_PORTION = 3;
+
+let mealPlanSettings = null; // form state while editing preferences
+let mealPlanEditing = false;
+let mealPlanDay = 0;
+let dislikeQuery = "";
+
+function getDislikes() {
+  try { return JSON.parse(localStorage.getItem(DISLIKES_KEY)) || []; } catch (e) { return []; }
+}
+function setDislikes(list) { localStorage.setItem(DISLIKES_KEY, JSON.stringify(list)); }
+function getMealPlan() {
+  try { return JSON.parse(localStorage.getItem(MEALPLAN_KEY)); } catch (e) { return null; }
+}
+function setMealPlan(plan) { localStorage.setItem(MEALPLAN_KEY, JSON.stringify(plan)); }
+
+function defaultMealPlanSettings() {
+  return { days: 7, breakfast: true, lunch: true, dinner: true, snacks: 1,
+           calories: getNutritionTargets().calories, vegetarian: false };
+}
+
+function canLeaveOut(recipe, food) {
+  let kcal = 0, grams = 0, foodKcal = 0, foodGrams = 0;
+  recipe.ingredients.forEach(i => {
+    const k = recipeData.foods[i.food].per100.calories * i.grams / 100;
+    kcal += k; grams += i.grams;
+    if (i.food === food) { foodKcal += k; foodGrams += i.grams; }
+  });
+  return foodKcal <= kcal * LEAVE_OUT_MAX_KCAL_SHARE && foodGrams <= grams * LEAVE_OUT_MAX_GRAM_SHARE;
+}
+
+// null = recipe can't be used; otherwise the list of disliked foods to leave out (may be empty)
+function recipeLeaveOuts(recipe, dislikes) {
+  const used = [...new Set(recipe.ingredients.map(i => i.food))].filter(f => dislikes.includes(f));
+  return used.every(f => canLeaveOut(recipe, f)) ? used : null;
+}
+
+function mealSlotsFor(settings) {
+  const slots = [];
+  if (settings.breakfast) slots.push("breakfast");
+  if (settings.snacks >= 2) slots.push("snack");
+  if (settings.lunch) slots.push("lunch");
+  if (settings.snacks >= 1) slots.push("snack");
+  if (settings.dinner) slots.push("dinner");
+  return slots;
+}
+
+function slotCalorieTargets(settings) {
+  const slots = mealSlotsFor(settings);
+  const totalWeight = slots.reduce((s, k) => s + MEAL_SLOTS[k].weight, 0) || 1;
+  return slots.map(k => ({ slot: k, target: settings.calories * MEAL_SLOTS[k].weight / totalWeight }));
+}
+
+function roundPortion(p) {
+  return Math.min(MAX_PORTION, Math.max(MIN_PORTION, Math.round(p * 4) / 4));
+}
+
+function pickPlanMeal(slot, target, settings, dislikes, avoidIds, excludeId) {
+  const options = recipeData.recipes
+    .filter(r => r.category === slot && r.id !== excludeId && (!settings.vegetarian || r.vegetarian))
+    .map(r => ({ r, leftOut: recipeLeaveOuts(r, dislikes) }))
+    .filter(o => o.leftOut);
+  if (!options.length) return { slot, recipeId: null, target };
+  let best = null;
+  options.forEach(o => {
+    const per = recipePerServing(o.r, o.leftOut);
+    const portion = roundPortion(target / per.calories);
+    const score = Math.abs(Math.log((portion * per.calories) / target)) * 2   // close to the calorie target
+      + Math.abs(Math.log(portion)) * 0.6                                       // prefer normal-sized portions
+      + (avoidIds.includes(o.r.id) ? 3 : 0)                                    // variety across days
+      + o.leftOut.length * 0.3                                                 // prefer dishes made as written
+      + Math.random() * 0.8;
+    if (!best || score < best.score) best = { score, meal: { slot, recipeId: o.r.id, portion, leftOut: o.leftOut, target, logged: false } };
+  });
+  return best.meal;
+}
+
+// nudge unlogged portions in ¼-serving steps until the day total is as close to target as it can get
+function balanceDayPortions(day, target) {
+  for (let step = 0; step < 24; step++) {
+    const diff = target - planDayTotals(day).calories;
+    let best = null;
+    day.meals.forEach(m => {
+      if (!m.recipeId || m.logged) return;
+      [0.25, -0.25].forEach(delta => {
+        const portion = m.portion + delta;
+        if (portion < MIN_PORTION || portion > MAX_PORTION) return;
+        const kcal = planMealNutrition({ ...m, portion: 1 }).calories * delta;
+        const gain = Math.abs(diff) - Math.abs(diff - kcal);
+        if (gain > 0 && (!best || gain > best.gain)) best = { m, portion, gain };
+      });
+    });
+    if (!best) return;
+    best.m.portion = best.portion;
+  }
+}
+
+function generateMealPlan(settings) {
+  const dislikes = getDislikes();
+  const targets = slotCalorieTargets(settings);
+  const days = [];
+  for (let d = 0; d < settings.days; d++) {
+    const recent = days.slice(-2).flatMap(day => day.meals.map(m => m.recipeId));
+    const meals = [];
+    targets.forEach(({ slot, target }) => {
+      const avoid = [...recent, ...meals.map(m => m.recipeId)];
+      meals.push(pickPlanMeal(slot, target, settings, dislikes, avoid, null));
+    });
+    const day = { meals };
+    balanceDayPortions(day, settings.calories);
+    days.push(day);
+  }
+  return { createdAt: new Date().toISOString(), settings: { ...settings }, dislikes, days };
+}
+
+function planMealNutrition(meal) {
+  const recipe = recipeData.recipes.find(r => r.id === meal.recipeId);
+  if (!recipe) return { calories: 0, protein: 0, carbs: 0, fat: 0 };
+  const per = recipePerServing(recipe, meal.leftOut);
+  const out = {};
+  Object.keys(per).forEach(k => { out[k] = per[k] * meal.portion; });
+  return out;
+}
+
+function planDayTotals(day) {
+  return day.meals.reduce((t, m) => {
+    const n = planMealNutrition(m);
+    Object.keys(t).forEach(k => { t[k] += n[k]; });
+    return t;
+  }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
+}
+
+function planDayDone(day) {
+  const real = day.meals.filter(m => m.recipeId);
+  return real.length > 0 && real.every(m => m.logged);
+}
+
+function planShoppingList(plan) {
+  const grams = {};
+  plan.days.forEach(day => day.meals.forEach(m => {
+    const recipe = recipeData.recipes.find(r => r.id === m.recipeId);
+    if (!recipe) return;
+    recipe.ingredients.filter(i => !m.leftOut.includes(i.food)).forEach(i => {
+      grams[i.food] = (grams[i.food] || 0) + i.grams * m.portion / recipe.servings;
+    });
+  }));
+  return Object.entries(grams)
+    .map(([food, g]) => ({ name: recipeData.foods[food].name, grams: g }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function formatGrams(g) {
+  return g >= 1000 ? `${(Math.round(g / 100) / 10).toLocaleString()} kg` : `${Math.max(5, Math.round(g / 5) * 5)} g`;
+}
+
+function renderMealPlan() {
+  const body = document.getElementById("mealplan-body");
+  if (!recipeData) {
+    body.innerHTML = `<div class="empty-state">Loading recipes…</div>`;
+    loadRecipes().then(renderMealPlan).catch(() => {
+      body.innerHTML = `<div class="empty-state">Couldn't load recipes.<br>Check your connection and try again.</div>`;
+    });
+    return;
+  }
+  const plan = getMealPlan();
+  if (!plan || mealPlanEditing) renderMealPlanSetup(plan);
+  else renderMealPlanView(plan);
+}
+
+function chipHtml(attr, value, label, selected) {
+  return `<button type="button" class="chip${selected ? " selected" : ""}" data-${attr}="${value}">${label}</button>`;
+}
+
+function renderMealPlanSetup(plan) {
+  if (!mealPlanSettings) mealPlanSettings = plan ? { ...plan.settings } : defaultMealPlanSettings();
+  const s = mealPlanSettings;
+  const body = document.getElementById("mealplan-body");
+  const noMeals = !mealSlotsFor(s).length;
+  body.innerHTML = `
+    <h2 class="mp-title">${plan ? "Edit Meal Plan" : "Build a Meal Plan"}</h2>
+    <p class="mp-intro">Pick your preferences and we'll fill your days with recipes from the Recipe Index, sized to your calories.</p>
+    <h3 class="goal-field-label">How many days?</h3>
+    <div class="chip-group">${[3, 5, 7].map(n => chipHtml("mp-days", n, `${n} days`, s.days === n)).join("")}</div>
+    <h3 class="goal-field-label">Meals</h3>
+    <div class="chip-group">${["breakfast", "lunch", "dinner"].map(k => chipHtml("mp-slot", k, MEAL_SLOTS[k].label, s[k])).join("")}</div>
+    <h3 class="goal-field-label">Snacks per day</h3>
+    <div class="chip-group">${[0, 1, 2].map(n => chipHtml("mp-snacks", n, n === 0 ? "None" : String(n), s.snacks === n)).join("")}</div>
+    <h3 class="goal-field-label">Calories per day</h3>
+    <input type="number" id="mp-calories" class="mp-input" inputmode="numeric" min="1000" max="6000" step="50" value="${s.calories}">
+    <div class="mp-hint">Starts from your Nutrition Goals (${getNutritionTargets().calories} kcal).</div>
+    <h3 class="goal-field-label">Diet</h3>
+    <div class="chip-group">${chipHtml("mp-veg", "1", "Vegetarian only", s.vegetarian)}</div>
+    <h3 class="goal-field-label">Foods I don't like <span id="mp-dislike-count" class="mp-dislike-count"></span></h3>
+    <div class="mp-hint">Small ingredients get left out of a recipe. Recipes built around a food you don't like are skipped.</div>
+    <div class="qa-search-wrap recipes-search-wrap">
+      <span class="qa-search-icon" aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/></svg></span>
+      <input type="search" id="mp-dislike-search" placeholder="Search ingredients" autocomplete="off" value="${dislikeQuery.replace(/"/g, "&quot;")}" aria-label="Search ingredients">
+    </div>
+    <div id="mp-dislike-grid" class="mp-dislike-grid"></div>
+    <button type="button" id="mp-generate-btn" class="primary-btn"${noMeals ? " disabled" : ""}>${noMeals ? "Pick at least one meal" : plan ? "Update My Meal Plan" : "Create My Meal Plan"}</button>
+    ${plan ? `<button type="button" id="mp-cancel-btn" class="primary-btn secondary">Cancel</button>` : ""}`;
+  renderDislikeGrid();
+  body.querySelector("#mp-dislike-search").addEventListener("input", e => { dislikeQuery = e.target.value; renderDislikeGrid(); });
+  body.querySelector("#mp-calories").addEventListener("input", e => { s.calories = parseInt(e.target.value, 10) || s.calories; });
+}
+
+function renderDislikeGrid() {
+  const dislikes = getDislikes();
+  const q = dislikeQuery.trim().toLowerCase();
+  const foods = Object.entries(recipeData.foods)
+    .filter(([key, f]) => !q || f.name.toLowerCase().includes(q) || dislikes.includes(key))
+    .sort((a, b) => (dislikes.includes(b[0]) - dislikes.includes(a[0])) || a[1].name.localeCompare(b[1].name));
+  document.getElementById("mp-dislike-grid").innerHTML = foods.length
+    ? foods.map(([key, f]) => `<button type="button" class="chip mp-dislike${dislikes.includes(key) ? " disliked" : ""}" data-mp-dislike="${key}">${dislikes.includes(key) ? "✕ " : ""}${f.name}</button>`).join("")
+    : `<div class="mp-hint">No ingredients match.</div>`;
+  document.getElementById("mp-dislike-count").textContent = dislikes.length ? `(${dislikes.length} avoided)` : "";
+}
+
+function renderMealPlanView(plan) {
+  if (mealPlanDay >= plan.days.length) mealPlanDay = 0;
+  const day = plan.days[mealPlanDay];
+  const totals = planDayTotals(day);
+  const target = plan.settings.calories;
+  const body = document.getElementById("mealplan-body");
+  body.innerHTML = `
+    <div class="mp-summary">
+      <div>
+        <div class="mp-summary-title">${plan.days.length}-Day Meal Plan</div>
+        <div class="mp-summary-sub">~${target.toLocaleString()} kcal a day${plan.settings.vegetarian ? " · Vegetarian" : ""}${plan.dislikes.length ? ` · Avoiding ${plan.dislikes.length} food${plan.dislikes.length === 1 ? "" : "s"}` : ""}</div>
+      </div>
+    </div>
+    <div class="mp-top-actions">
+      <button type="button" class="primary-btn secondary" id="mp-edit-btn">Edit Preferences</button>
+      <button type="button" class="primary-btn secondary" id="mp-new-btn">↻ New Plan</button>
+    </div>
+    <div class="mp-day-pills">${plan.days.map((d, i) => `<button type="button" class="mp-day-pill${i === mealPlanDay ? " active" : ""}${planDayDone(d) ? " done" : ""}" data-mp-day="${i}">${planDayDone(d) ? "✓ " : ""}Day ${i + 1}</button>`).join("")}</div>
+    <div class="mp-day-totals">
+      <div class="mp-day-kcal"><b>${Math.round(totals.calories).toLocaleString()}</b> / ${target.toLocaleString()} kcal</div>
+      <div class="mp-day-macros">P ${Math.round(totals.protein)}g · C ${Math.round(totals.carbs)}g · F ${Math.round(totals.fat)}g</div>
+    </div>
+    <div class="mp-meals">${day.meals.map((m, i) => planMealCardHtml(m, i)).join("")}</div>
+    <details class="mp-shopping">
+      <summary>🛒 Shopping list for all ${plan.days.length} days</summary>
+      <ul>${planShoppingList(plan).map(it => `<li><span>${it.name}</span><span class="mp-shop-qty">${formatGrams(it.grams)}</span></li>`).join("")}</ul>
+    </details>`;
+}
+
+function planMealCardHtml(meal, index) {
+  const slot = MEAL_SLOTS[meal.slot].label;
+  if (!meal.recipeId) {
+    return `<div class="mp-meal empty"><div class="mp-meal-slot">${slot}</div>
+      <div class="mp-meal-none">No ${slot.toLowerCase()} recipes left without your avoided foods. Try removing one from Foods I don't like.</div></div>`;
+  }
+  const recipe = recipeData.recipes.find(r => r.id === meal.recipeId);
+  const n = planMealNutrition(meal);
+  return `<div class="mp-meal${meal.logged ? " logged" : ""}" data-mp-meal="${index}">
+    <button type="button" class="mp-meal-main" data-mp-open="${index}">
+      <span class="recipe-emoji" aria-hidden="true">${recipe.emoji}</span>
+      <span class="recipe-card-text">
+        <span class="recipe-card-cat">${slot}</span>
+        <span class="recipe-card-title">${recipe.name}</span>
+        <span class="recipe-card-macros">${formatServings(meal.portion)} · ${Math.round(n.calories)} kcal · P ${Math.round(n.protein)}g</span>
+        ${meal.leftOut.length ? `<span class="mp-left-out">Leaving out: ${foodNames(meal.leftOut)}</span>` : ""}
+      </span>
+    </button>
+    <div class="mp-meal-actions">
+      <button type="button" class="mp-action" data-mp-swap="${index}" aria-label="Swap for a different recipe">↻ Swap</button>
+      <button type="button" class="mp-action log${meal.logged ? " done" : ""}" data-mp-log="${index}">${meal.logged ? "✓ Logged" : "+ Log"}</button>
+    </div>
+  </div>`;
+}
+
+function logPlanMeal(plan, meal) {
+  const recipe = recipeData.recipes.find(r => r.id === meal.recipeId);
+  const n = planMealNutrition(meal);
+  addFoodEntry({ name: recipe.name, brand: "Meal Plan", image: "", serving: formatServings(meal.portion), ...n });
+  updateHomeStats();
+  meal.logged = true;
+  setMealPlan(plan);
+}
+
+document.getElementById("mealplan-btn").addEventListener("click", () => showTab("mealplan-screen"));
+document.getElementById("mealplan-back-btn").addEventListener("click", () => showTab("nutrition-screen"));
+document.getElementById("mealplan-body").addEventListener("click", e => {
+  const t = e.target.closest("button");
+  if (!t) return;
+  const s = mealPlanSettings;
+  const plan = getMealPlan();
+  if (t.dataset.mpDays) { s.days = +t.dataset.mpDays; return renderMealPlanSetup(plan); }
+  if (t.dataset.mpSlot) { s[t.dataset.mpSlot] = !s[t.dataset.mpSlot]; return renderMealPlanSetup(plan); }
+  if (t.dataset.mpSnacks) { s.snacks = +t.dataset.mpSnacks; return renderMealPlanSetup(plan); }
+  if (t.dataset.mpVeg) { s.vegetarian = !s.vegetarian; return renderMealPlanSetup(plan); }
+  if (t.dataset.mpDislike) {
+    const key = t.dataset.mpDislike;
+    const list = getDislikes();
+    setDislikes(list.includes(key) ? list.filter(k => k !== key) : [...list, key]);
+    return renderDislikeGrid();
+  }
+  if (t.id === "mp-generate-btn") {
+    const cal = parseInt(document.getElementById("mp-calories").value, 10);
+    s.calories = Math.min(6000, Math.max(1000, cal || getNutritionTargets().calories));
+    setMealPlan(generateMealPlan(s));
+    mealPlanEditing = false; mealPlanSettings = null; mealPlanDay = 0;
+    renderMealPlan(); window.scrollTo(0, 0);
+    return;
+  }
+  if (t.id === "mp-cancel-btn") { mealPlanEditing = false; mealPlanSettings = null; return renderMealPlan(); }
+  if (!plan) return;
+  if (t.id === "mp-edit-btn") { mealPlanEditing = true; mealPlanSettings = { ...plan.settings }; renderMealPlan(); window.scrollTo(0, 0); return; }
+  if (t.id === "mp-new-btn") {
+    if (plan.days.some(d => d.meals.some(m => m.logged)) && !confirm("Make a new plan? Your current plan will be replaced (logged meals stay in your food log).")) return;
+    setMealPlan(generateMealPlan(plan.settings)); mealPlanDay = 0; return renderMealPlan();
+  }
+  if (t.dataset.mpDay) { mealPlanDay = +t.dataset.mpDay; return renderMealPlan(); }
+  const day = plan.days[mealPlanDay];
+  if (t.dataset.mpSwap) {
+    const i = +t.dataset.mpSwap, old = day.meals[i];
+    const avoid = plan.days.flatMap(d => d.meals.map(m => m.recipeId));
+    day.meals[i] = pickPlanMeal(old.slot, old.target, plan.settings, getDislikes(), avoid, old.recipeId);
+    if (!day.meals[i].recipeId) day.meals[i] = old; // nothing else fits: keep the current meal
+    balanceDayPortions(day, plan.settings.calories);
+    setMealPlan(plan);
+    return renderMealPlan();
+  }
+  if (t.dataset.mpLog) {
+    const meal = day.meals[+t.dataset.mpLog];
+    if (!meal.logged) logPlanMeal(plan, meal);
+    return renderMealPlan();
+  }
+  if (t.dataset.mpOpen) {
+    const dayIndex = mealPlanDay, mealIndex = +t.dataset.mpOpen;
+    const meal = day.meals[mealIndex];
+    const recipe = recipeData.recipes.find(r => r.id === meal.recipeId);
+    recipeOpenId = recipe.id;
+    recipeServings = recipe.servings;
+    recipeContext = {
+      exclude: meal.leftOut, logPortion: meal.portion, returnTo: "mealplan-screen",
+      onLogged: () => { const p = getMealPlan(); if (p && p.days[dayIndex]) { p.days[dayIndex].meals[mealIndex].logged = true; setMealPlan(p); } }
+    };
+    showTab("recipes-screen");
+    window.scrollTo(0, 0);
+  }
 });
 
 // ============================================================
