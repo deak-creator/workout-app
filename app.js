@@ -5,12 +5,12 @@ let lastParams = null;
 let activeWeekIndex = 0;
 let activePlanDayIndex = null; // null = jump to the first unfinished day
 
-const ALL_EQUIPMENT = ["bodyweight", "dumbbells", "bands", "kettlebell", "pullup bar", "barbell", "cable machine", "bench"];
+const ALL_EQUIPMENT = ["bodyweight", "dumbbells", "bands", "kettlebell", "pullup bar", "barbell", "cable machine", "bench", "machine"];
 const HOME_EQUIPMENT = ["bodyweight", "dumbbells", "bands", "kettlebell", "pullup bar"];
 const GYM_EQUIPMENT = ALL_EQUIPMENT; // gyms typically have everything, including home-friendly gear
 
 // At the gym, home-style gear is still allowed but should rarely win: prefer barbell/cable/bench work.
-const GYM_EQUIPMENT_BIAS = { barbell: 3, "cable machine": 3, bench: 3, dumbbells: 2.5, kettlebell: 0.5, "pullup bar": 0, bands: -3, bodyweight: -2 };
+const GYM_EQUIPMENT_BIAS = { barbell: 3, "cable machine": 3, bench: 3, machine: 2.5, dumbbells: 2.5, kettlebell: 0.5, "pullup bar": 0, bands: -3, bodyweight: -2 };
 
 function isGymSession(params) {
   if (params.location) return params.location === "gym";
@@ -70,12 +70,24 @@ document.querySelector(".mode-toggle").addEventListener("click", e => {
   if (!btn) return;
   document.querySelectorAll(".mode-btn").forEach(b => b.classList.remove("selected"));
   btn.classList.add("selected");
-  state.mode = btn.dataset.value;
-  document.querySelectorAll(".plan-only").forEach(el => el.hidden = state.mode !== "plan");
-  document.querySelectorAll(".quick-only").forEach(el => el.hidden = state.mode === "plan");
-  document.getElementById("duration-label").textContent = state.mode === "plan" ? "Minutes per day" : "Duration";
-  document.getElementById("generate-btn").textContent = state.mode === "plan" ? "Generate Plan" : "Generate Workout";
+  applySetupMode(btn.dataset.value);
 });
+
+// Show the Build form sections for Quick Workout / Multi-Week Plan / Build My Own
+function applySetupMode(mode) {
+  state.mode = mode;
+  document.querySelectorAll(".mode-btn").forEach(b => {
+    b.classList.toggle("selected", b.dataset.value === mode);
+    b.setAttribute("aria-selected", String(b.dataset.value === mode));
+  });
+  document.querySelectorAll(".plan-only").forEach(el => el.hidden = mode !== "plan");
+  document.querySelectorAll(".quick-only").forEach(el => el.hidden = mode !== "quick");
+  document.querySelectorAll(".custom-only").forEach(el => el.hidden = mode !== "custom");
+  document.querySelectorAll(".not-custom").forEach(el => el.hidden = mode === "custom");
+  document.getElementById("duration-label").textContent = mode === "plan" ? "Minutes per day" : "Duration";
+  document.getElementById("generate-btn").textContent =
+    mode === "plan" ? "Generate Plan" : mode === "custom" ? "Start Building" : "Generate Workout";
+}
 
 // ---------- tab navigation ----------
 document.querySelectorAll(".tab-btn").forEach(btn => {
@@ -100,6 +112,7 @@ document.getElementById("regen-btn").addEventListener("click", () => {
 // ---------- form submit ----------
 document.getElementById("setup-form").addEventListener("submit", e => {
   e.preventDefault();
+  if (state.mode === "custom") { startCustomWorkout(); return; }
   const goalPrompt = (document.getElementById("goal-prompt-input").value || "").trim();
   const promptBias = parseGoalPrompt(goalPrompt);
   const params = {
@@ -738,11 +751,15 @@ function renderWorkout(workout) {
   const top = workoutTopMuscles(workout.blocks);
   const allItems = workout.blocks.flatMap(b => b.items);
 
-  document.getElementById("wo-plan-pill-text").textContent = `${titleMap[workout.goal]} · ${workout.duration} min`;
-  document.getElementById("workout-title").textContent =
-    top.length ? top.map(t => titleCase(t.muscle)).join(", ") : titleMap[workout.goal];
-  document.getElementById("workout-sub").textContent =
-    `${allItems.length} exercises · ${titleCase(workout.difficulty)}`;
+  if (workout.custom) workout.duration = customWorkoutMinutes(allItems);
+  document.getElementById("wo-plan-pill-text").textContent = workout.custom
+    ? `Custom · ~${workout.duration} min` : `${titleMap[workout.goal]} · ${workout.duration} min`;
+  document.getElementById("workout-title").textContent = workout.custom ? workout.name
+    : top.length ? top.map(t => titleCase(t.muscle)).join(", ") : titleMap[workout.goal];
+  document.getElementById("workout-sub").textContent = workout.custom
+    ? (allItems.length ? `${allItems.length} exercise${allItems.length === 1 ? "" : "s"} · your own workout` : "Add exercises to build your workout")
+    : `${allItems.length} exercises · ${titleCase(workout.difficulty)}`;
+  document.getElementById("regen-btn").hidden = !!workout.custom;
 
   const musclesEl = document.getElementById("workout-muscles");
   const recovery = computeRecovery();
@@ -756,6 +773,9 @@ function renderWorkout(workout) {
   const list = document.getElementById("workout-list");
   list.innerHTML = "";
   renderBlocksInto(list, workout.blocks, lastParams, () => renderWorkout(currentWorkout));
+  if (workout.custom && !allItems.length) {
+    list.innerHTML = `<div class="empty-state custom-empty">Your workout is empty.<br>Tap <strong>Add an exercise</strong> to search the library.</div>`;
+  }
   renderCompleteBanner(document.getElementById("wo-complete-banner"), allItems, workout._historyId, "Workout");
   updateStartButton();
   persistSaved(workout);
@@ -792,7 +812,7 @@ function finishCurrentWorkout() {
   const titleMap = { strength: "Strength", cardio: "Cardio", fatloss: "Fat Loss", mobility: "Mobility", general: "General Fitness" };
   const muscles = workoutTopMuscles(currentWorkout.blocks, 3).map(t => titleCase(t.muscle)).join(", ");
   const entry = recordWorkout(currentWorkout, {
-    title: muscles || titleMap[currentWorkout.goal],
+    title: currentWorkout.custom ? currentWorkout.name : muscles || titleMap[currentWorkout.goal],
     goal: currentWorkout.goal,
     duration: currentWorkout.duration
   });
@@ -811,38 +831,118 @@ document.getElementById("wo-start-btn").addEventListener("click", () => {
 document.getElementById("wo-plan-pill").addEventListener("click", () => showTab("setup-screen"));
 
 // ---------- add an exercise (quick workout) ----------
+// Exercise library filters (Add an exercise / Build My Own)
+const ADDEX_MUSCLE_GROUPS = [
+  ["all", "All"], ["chest", "Chest", ["chest"]], ["back", "Back", ["back", "lower back"]], ["shoulders", "Shoulders", ["shoulders"]],
+  ["arms", "Arms", ["biceps", "triceps", "forearms"]], ["legs", "Legs", ["quads", "hamstrings", "calves", "inner thighs", "hip flexors"]],
+  ["glutes", "Glutes", ["glutes", "hips"]], ["core", "Core", ["core", "obliques"]], ["mobility", "Stretch & Mobility"]
+];
+const EQUIPMENT_LABELS = { bodyweight: "Bodyweight", dumbbells: "Dumbbells", barbell: "Barbell", machine: "Machines", "cable machine": "Cable",
+  bench: "Bench", kettlebell: "Kettlebell", bands: "Bands", "pullup bar": "Pull-up Bar" };
+let addexMuscle = "all";
+let addexEquip = "all";
+
+function addexMatchesMuscle(ex, key) {
+  if (key === "all") return true;
+  if (key === "mobility") return ex.type === "mobility";
+  const group = ADDEX_MUSCLE_GROUPS.find(g => g[0] === key);
+  // upper-body groups go by the main muscle (so push-ups aren't "Arms"); legs/glutes/core also count the second one
+  const considered = ["legs", "glutes", "core"].includes(key) ? ex.muscles.slice(0, 2) : ex.muscles.slice(0, 1);
+  return ex.type !== "mobility" && considered.some(m => group[2].includes(m));
+}
+
 function addExerciseCandidates(query) {
+  const custom = !!(currentWorkout && currentWorkout.custom);
   const equipment = lastParams.equipment instanceof Set ? lastParams.equipment : new Set(lastParams.equipment);
-  const maxDiff = DIFF_RANK[lastParams.difficulty];
+  const maxDiff = custom ? 3 : DIFF_RANK[lastParams.difficulty];
   const inWorkout = new Set(currentWorkout.blocks.flatMap(b => b.items).map(i => i.name));
   const q = query.trim().toLowerCase();
   return EXERCISES.filter(ex =>
-    equipment.has(ex.equipment) && DIFF_RANK[ex.difficulty] <= maxDiff && !inWorkout.has(ex.name) &&
-    (!q || ex.name.toLowerCase().includes(q) || ex.muscles.some(m => m.includes(q)))
+    equipment.has(ex.equipment) && DIFF_RANK[ex.difficulty] <= maxDiff && (custom || !inWorkout.has(ex.name)) &&
+    addexMatchesMuscle(ex, addexMuscle) && (addexEquip === "all" || ex.equipment === addexEquip) &&
+    (!q || ex.name.toLowerCase().includes(q) || ex.muscles.some(m => m.includes(q)) || ex.equipment.includes(q))
   ).sort((a, b) => {
+    if (custom) return a.name.localeCompare(b.name);
     const atGym = isGymSession(lastParams);
     return (gymEquipmentBias(b, atGym) - gymEquipmentBias(a, atGym)) || a.name.localeCompare(b.name);
   });
 }
 
+function renderAddExerciseFilters() {
+  const equipment = lastParams.equipment instanceof Set ? lastParams.equipment : new Set(lastParams.equipment);
+  const chip = (attr, key, label, on) =>
+    `<button type="button" class="chip${on ? " selected" : ""}" data-${attr}="${key}">${label}</button>`;
+  document.getElementById("addex-muscle-filters").innerHTML =
+    ADDEX_MUSCLE_GROUPS.map(([key, label]) => chip("addex-muscle", key, label, addexMuscle === key)).join("");
+  const equips = ALL_EQUIPMENT.filter(e => equipment.has(e));
+  document.getElementById("addex-equip-filters").innerHTML = chip("addex-equip", "all", "All equipment", addexEquip === "all") +
+    equips.map(e => chip("addex-equip", e, EQUIPMENT_LABELS[e] || titleCase(e), addexEquip === e)).join("");
+}
+
 function renderAddExerciseList() {
+  const custom = !!(currentWorkout && currentWorkout.custom);
   const listEl = document.getElementById("addex-list");
   const results = addExerciseCandidates(document.getElementById("addex-search").value);
+  const inWorkout = new Set(currentWorkout.blocks.flatMap(b => b.items).map(i => i.name));
+  renderAddExerciseFilters();
+  document.getElementById("addex-count").textContent = `${results.length} exercise${results.length === 1 ? "" : "s"}`;
+  const doneBtn = document.getElementById("addex-done-btn");
+  doneBtn.hidden = !custom;
+  doneBtn.textContent = inWorkout.size ? `Done · ${inWorkout.size} exercise${inWorkout.size === 1 ? "" : "s"}` : "Done";
   if (!results.length) {
-    listEl.innerHTML = `<div class="empty-state">No matching exercises for your equipment.</div>`;
+    listEl.innerHTML = `<div class="empty-state">No matching exercises.<br>Try another search or filter.</div>`;
     return;
   }
   listEl.innerHTML = "";
   results.forEach(ex => {
+    const added = custom && inWorkout.has(ex.name);
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "addex-item";
+    btn.className = "addex-item" + (added ? " added" : "");
     btn.innerHTML = `<span class="ex-thumb">${bodySvg(ex.muscles)}</span>
-      <span class="addex-text"><span class="addex-name">${ex.name}</span><span class="addex-meta">${ex.muscles.map(titleCase).join(", ")} · ${ex.equipment}</span></span>
-      <span class="addex-plus" aria-hidden="true">+</span>`;
-    btn.addEventListener("click", () => addExerciseToWorkout(ex));
+      <span class="addex-text"><span class="addex-name">${ex.name}</span><span class="addex-meta">${ex.muscles.map(titleCase).join(", ")} · ${EQUIPMENT_LABELS[ex.equipment] || ex.equipment}${custom ? ` · ${titleCase(ex.difficulty)}` : ""}</span></span>
+      <span class="addex-plus" aria-hidden="true">${added ? "✓" : "+"}</span>`;
+    btn.setAttribute("aria-label", `${added ? "Remove" : "Add"} ${ex.name}`);
+    btn.addEventListener("click", () => {
+      if (added) removeExerciseFromWorkout(ex.name);
+      else addExerciseToWorkout(ex);
+    });
     listEl.appendChild(btn);
   });
+}
+
+function removeExerciseFromWorkout(name) {
+  currentWorkout.blocks.forEach(b => { b.items = b.items.filter(i => i.name !== name); });
+  renderWorkout(currentWorkout);
+  if (!document.getElementById("addex-modal").hidden) renderAddExerciseList();
+}
+
+// rough session length for a custom workout: ~2.25 min per strength set (work + rest), ~1.2 min per timed set
+function customWorkoutMinutes(items) {
+  const mins = items.reduce((sum, ex) => {
+    const sets = ex._log ? ex._log.sets.length : 3;
+    return sum + sets * (ex.type === "strength" ? 2.25 : 1.2);
+  }, 0);
+  return Math.max(5, Math.round(mins / 5) * 5);
+}
+
+function startCustomWorkout() {
+  const name = (document.getElementById("custom-name").value || "").trim() || "My Workout";
+  lastParams = { goal: "custom", duration: 0, difficulty: "advanced", equipment: new Set(ALL_EQUIPMENT), muscles: new Set(), custom: true };
+  const workout = { goal: "custom", custom: true, name, duration: 0, difficulty: "advanced", equipment: [...ALL_EQUIPMENT],
+                    createdAt: new Date().toISOString(), dayLabel: null, blocks: [{ section: "Exercises", items: [] }] };
+  renderWorkout(workout);
+  showTab("workout-screen");
+  openAddExercise();
+}
+
+function openAddExercise() {
+  if (!currentWorkout) return;
+  addexMuscle = "all";
+  addexEquip = "all";
+  document.getElementById("addex-search").value = "";
+  renderAddExerciseList();
+  document.getElementById("addex-modal").hidden = false;
 }
 
 function addExerciseToWorkout(ex) {
@@ -850,19 +950,24 @@ function addExerciseToWorkout(ex) {
   const target = blocks.find(b => !/warm|cool/i.test(b.section)) || blocks[blocks.length - 1];
   const sample = target.items.find(i => i._seconds) || {};
   const seconds = sample._seconds || 40;
-  const repStyle = (lastParams.promptBias || parseGoalPrompt(lastParams.goalPrompt || "")).repStyle;
+  const repStyle = currentWorkout.custom ? "hypertrophy" : (lastParams.promptBias || parseGoalPrompt(lastParams.goalPrompt || "")).repStyle;
   target.items.push({ ...ex, durationLabel: formatSetLabel(ex, seconds, repStyle), _seconds: seconds, _role: "main", _focus: null });
-  document.getElementById("addex-modal").hidden = true;
   renderWorkout(currentWorkout);
+  // building your own: keep the library open so several exercises can be picked in one go
+  if (currentWorkout.custom) renderAddExerciseList();
+  else document.getElementById("addex-modal").hidden = true;
 }
 
-document.getElementById("wo-add-exercise").addEventListener("click", () => {
-  if (!currentWorkout) return;
-  document.getElementById("addex-search").value = "";
-  renderAddExerciseList();
-  document.getElementById("addex-modal").hidden = false;
-});
+document.getElementById("wo-add-exercise").addEventListener("click", openAddExercise);
 document.getElementById("addex-search").addEventListener("input", renderAddExerciseList);
+document.getElementById("addex-done-btn").addEventListener("click", () => { document.getElementById("addex-modal").hidden = true; });
+["addex-muscle-filters", "addex-equip-filters"].forEach(id => document.getElementById(id).addEventListener("click", e => {
+  const c = e.target.closest("[data-addex-muscle], [data-addex-equip]");
+  if (!c) return;
+  if (c.dataset.addexMuscle) addexMuscle = c.dataset.addexMuscle;
+  if (c.dataset.addexEquip) addexEquip = c.dataset.addexEquip;
+  renderAddExerciseList();
+}));
 document.getElementById("addex-close-btn").addEventListener("click", () => {
   document.getElementById("addex-modal").hidden = true;
 });
@@ -895,6 +1000,7 @@ function renderBlocksInto(container, blocks, params, onChange) {
         <div class="ex-side">
           <span class="ex-check${complete ? " done" : logged ? " partial" : ""}" aria-label="${complete ? "Complete" : logged ? "Partly done" : "Not logged yet"}">✓</span>
           <button type="button" class="swap-btn" title="Swap exercise" aria-label="Swap ${ex.name}">⇄</button>
+          ${params.custom ? `<span class="custom-tools">${idx > 0 ? `<button type="button" class="move-btn" title="Move up" aria-label="Move ${ex.name} up">↑</button>` : ""}<button type="button" class="remove-btn" title="Remove" aria-label="Remove ${ex.name}">✕</button></span>` : ""}
         </div>
       `;
       counter++;
@@ -904,6 +1010,15 @@ function renderBlocksInto(container, blocks, params, onChange) {
         const alt = findSwapCandidate(ex, equipmentSet, maxDiff, excludeNames);
         if (!alt) return;
         block.items[idx] = { ...alt, durationLabel: formatSetLabel(alt, ex._seconds || 30), _seconds: ex._seconds, _role: ex._role, _focus: ex._focus };
+        onChange();
+      });
+
+      const removeBtn = row.querySelector(".remove-btn");
+      if (removeBtn) removeBtn.addEventListener("click", e => { e.stopPropagation(); block.items.splice(idx, 1); onChange(); });
+      const moveBtn = row.querySelector(".move-btn");
+      if (moveBtn) moveBtn.addEventListener("click", e => {
+        e.stopPropagation();
+        [block.items[idx - 1], block.items[idx]] = [block.items[idx], block.items[idx - 1]];
         onChange();
       });
 
@@ -1321,7 +1436,7 @@ function savedEntryTitle(entry) {
   const w = entry.data;
   return entry.kind === "plan"
     ? `${GOAL_TITLES[w.goal] || "Workout"} Plan · ${w.daysPerWeek}x/wk · ${w.weeksCount}wk`
-    : `${GOAL_TITLES[w.goal] || "Workout"} · ${w.duration} min`;
+    : w.custom ? `${w.name} · ~${w.duration} min` : `${GOAL_TITLES[w.goal] || "Workout"} · ${w.duration} min`;
 }
 
 // { done, total, complete, text } for a saved workout or plan
@@ -1350,7 +1465,7 @@ function openSavedEntry(entry) {
     renderPlan(w);
     showTab("plan-screen");
   } else {
-    lastParams = { goal: w.goal, duration: w.duration, difficulty: w.difficulty, equipment: new Set(w.equipment), muscles: new Set() };
+    lastParams = { goal: w.goal, duration: w.duration, difficulty: w.difficulty, equipment: new Set(w.equipment), muscles: new Set(), custom: !!w.custom };
     renderWorkout(w);
     showTab("workout-screen");
   }
@@ -1639,17 +1754,7 @@ document.querySelectorAll(".action-tile, .dash-card, .action-tile-mini").forEach
     const goto = tile.dataset.goto;
     if (goto === "saved-screen") savedFolder = tile.dataset.folder || null;
     if (tile.dataset.presetmode && goto === "setup-screen") {
-      const target = tile.dataset.presetmode;
-      document.querySelectorAll(".mode-btn").forEach(b => {
-        const isTarget = b.dataset.value === target;
-        b.classList.toggle("selected", isTarget);
-        b.setAttribute("aria-selected", isTarget ? "true" : "false");
-      });
-      state.mode = target;
-      document.querySelectorAll(".plan-only").forEach(el => el.hidden = state.mode !== "plan");
-  document.querySelectorAll(".quick-only").forEach(el => el.hidden = state.mode === "plan");
-      document.getElementById("duration-label").textContent = state.mode === "plan" ? "Minutes per day" : "Duration";
-      document.getElementById("generate-btn").textContent = state.mode === "plan" ? "Generate Plan" : "Generate Workout";
+      applySetupMode(tile.dataset.presetmode);
     }
     if (tile.dataset.openscan) {
       showTab(goto);
