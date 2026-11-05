@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Workout App">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <meta name="theme-color" content="#f3f4f8">
-<link rel="stylesheet" href="style.css?v=37">
+<link rel="stylesheet" href="style.css?v=38">
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js" defer></script>
 </head>
 <body>
@@ -69,6 +69,15 @@
       <span class="dash-card-text">
         <span class="dash-card-title">Cardio</span>
         <span class="dash-card-sub" id="home-cardio-sub">Runs, rides, rows &amp; HIIT, tailored to you</span>
+      </span>
+      <span class="dash-card-arrow" aria-hidden="true">›</span>
+    </button>
+
+    <button type="button" class="dash-card dash-card-beer" data-goto="beer-screen">
+      <span class="dash-card-icon" aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 8h10v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V8z"/><path d="M15 10h2a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2"/><path d="M5 8a2.5 2.5 0 0 1 2.5-3.5A3 3 0 0 1 12.5 4 2.5 2.5 0 0 1 15 8"/><path d="M8.5 12v5M11.5 12v5"/></svg></span>
+      <span class="dash-card-text">
+        <span class="dash-card-title">Beer Planner</span>
+        <span class="dash-card-sub" id="home-beer-sub">Plan the week's beers and balance the calories</span>
       </span>
       <span class="dash-card-arrow" aria-hidden="true">›</span>
     </button>
@@ -280,6 +289,7 @@
         <div class="cal-progress-text">
           <span id="n-cal">0</span> / <span id="n-cal-goal">2000</span> kcal
         </div>
+        <div id="beer-adj-note" class="beer-adj-note" hidden></div>
       </div>
 
       <div class="macro-rings">
@@ -304,6 +314,8 @@
     <button type="button" id="recipes-btn" class="primary-btn secondary"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M9 8h7M9 12h5"/></svg> Recipe Index</button>
 
     <button type="button" id="mealplan-btn" class="primary-btn secondary"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4M8 14h3M8 17h6"/></svg> Meal Plan</button>
+
+    <button type="button" id="beer-btn" class="primary-btn secondary"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 8h10v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V8z"/><path d="M15 10h2a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2"/><path d="M5 8a2.5 2.5 0 0 1 2.5-3.5A3 3 0 0 1 12.5 4 2.5 2.5 0 0 1 15 8"/><path d="M8.5 12v5M11.5 12v5"/></svg> Beer Planner</button>
 
     <form id="manual-barcode-form" class="manual-barcode">
       <input type="text" id="manual-barcode-input" inputmode="numeric" placeholder="Or enter barcode number" aria-label="Enter barcode number manually">
@@ -503,6 +515,11 @@
     <div id="cardio-body"></div>
   </main>
 
+  <main id="beer-screen" class="screen" aria-label="Beer planner">
+    <button type="button" id="beer-back-btn" class="saved-folder-back">‹ Food</button>
+    <div id="beer-body"></div>
+  </main>
+
   <main id="saved-screen" class="screen" aria-label="Saved items">
     <div class="workout-header">
       <h2>Saved</h2>
@@ -536,6 +553,6 @@
   </nav>
 
 </div>
-<script src="app.js?v=37"></script>
+<script src="app.js?v=38"></script>
 </body>
 </html>
