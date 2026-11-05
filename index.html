@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Workout App">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <meta name="theme-color" content="#f3f4f8">
-<link rel="stylesheet" href="style.css?v=41">
+<link rel="stylesheet" href="style.css?v=42">
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js" defer></script>
 </head>
 <body>
@@ -312,6 +312,7 @@
     <button type="button" id="scan-btn" class="primary-btn secondary"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8a2 2 0 0 1 2-2h1.5l1-2h7l1 2H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8z"/><circle cx="12" cy="13" r="3.5"/></svg> Scan Barcode</button>
 
     <button type="button" id="recipes-btn" class="primary-btn secondary"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M9 8h7M9 12h5"/></svg> Recipe Index</button>
+    <button type="button" id="desserts-btn" class="primary-btn secondary"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 11a5 5 0 0 1 10 0"/><path d="M5 11h14l-7 11z"/><path d="M12 6V3"/></svg> High-Protein Desserts</button>
 
     <button type="button" id="mealplan-btn" class="primary-btn secondary"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4M8 14h3M8 17h6"/></svg> Meal Plan</button>
 
@@ -500,6 +501,7 @@
       </div>
       <div id="recipe-filters" class="recipe-filters" role="tablist" aria-label="Recipe filters"></div>
       <div id="recipe-cuisine-filters" class="recipe-filters cuisine-filters" role="tablist" aria-label="Cuisine filters"></div>
+      <div id="recipes-banner" class="recipes-banner" hidden></div>
       <div id="recipes-count" class="recipes-count"></div>
       <div id="recipes-list" class="recipes-list"></div>
     </div>
@@ -553,6 +555,6 @@
   </nav>
 
 </div>
-<script src="app.js?v=41"></script>
+<script src="app.js?v=42"></script>
 </body>
 </html>
