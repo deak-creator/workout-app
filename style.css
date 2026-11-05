@@ -1485,6 +1485,7 @@ html, body { background: radial-gradient(ellipse at top, #eef0f5 0%, #f3f4f8 60%
 .recipe-tag.protein { background: #fee2e2; color: #dc2626; }
 .recipe-tag.veg { background: #dcfce7; color: #16a34a; }
 .recipe-tag.quick { background: #dbeafe; color: #2563eb; }
+.recipe-tag.sauce { background: #ffedd5; color: #c2410c; }
 .recipe-hero { margin: 8px 0 12px; height: 140px; border-radius: 22px; background: linear-gradient(135deg, #fff7ed, #ffe4ea); display: flex; align-items: center; justify-content: center; font-size: 72px; }
 .recipe-detail-cat { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #ff2d55; }
 .recipe-detail-title { margin: 4px 0 6px; font-size: 24px; font-weight: 800; color: #0f172a; }
@@ -1504,6 +1505,7 @@ html, body { background: radial-gradient(ellipse at top, #eef0f5 0%, #f3f4f8 60%
 .recipe-ingredients { list-style: none; margin: 10px 0 18px; padding: 0; background: #ffffff; border: 1px solid #e4e7ee; border-radius: 16px; }
 .recipe-ingredients li { padding: 11px 14px; border-bottom: 1px solid #eef0f5; font-size: 15px; color: #1e293b; }
 .recipe-ingredients li:last-child { border-bottom: none; }
+.recipe-ingredients li.recipe-ing-group { background: #fff7ed; color: #c2410c; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; padding: 8px 14px; }
 .recipe-ing-qty { font-weight: 800; color: #0f172a; }
 .recipe-steps { margin: 10px 0 24px; padding: 0; list-style: none; counter-reset: step; }
 .recipe-steps li { counter-increment: step; position: relative; padding: 2px 0 14px 40px; font-size: 15px; line-height: 1.45; color: #1e293b; }
