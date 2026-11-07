@@ -1823,15 +1823,52 @@ showTab = function (id) {
 // ============================================================
 // NUTRITION — date-aware food log storage
 // ============================================================
-let activeFoodDate = new Date().toISOString().slice(0, 10); // YYYY-MM-DD, defaults to today
+// Day keys are YYYY-MM-DD in the phone's LOCAL time zone (not UTC), so "today"
+// flips at local midnight. (Before v43 they were UTC, so in Sydney anything
+// logged before 11am landed on the previous day.)
+function dateKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 function todayKey() {
-  return new Date().toISOString().slice(0, 10);
+  return dateKey(new Date());
 }
 
-function dateKey(d) {
-  return d.toISOString().slice(0, 10);
+let activeFoodDate = todayKey(); // YYYY-MM-DD, defaults to today
+let lastSeenTodayKey = activeFoodDate;
+
+// One-off repair for entries filed under the old UTC key. Food entries are always
+// logged "to today", so their correct day is the local date of loggedAt. Beer
+// entries are filed against a chosen planner day, so they're left alone.
+function migrateFoodLogToLocalDays() {
+  if (localStorage.getItem("foodLogLocalDays") === "1") return;
+  const all = getFoodLogAll(), fixed = {};
+  let moved = 0;
+  Object.keys(all).forEach(key => (all[key] || []).forEach(entry => {
+    let target = key;
+    if (entry && entry.loggedAt && !entry.beer) {
+      const at = new Date(entry.loggedAt);
+      if (!isNaN(at) && entry.loggedAt.slice(0, 10) === key) target = dateKey(at);
+    }
+    if (target !== key) moved++;
+    (fixed[target] = fixed[target] || []).push(entry);
+  }));
+  Object.keys(fixed).forEach(k => fixed[k].sort((a, b) => String(b.loggedAt || "").localeCompare(String(a.loggedAt || ""))));
+  if (moved) localStorage.setItem("foodLog", JSON.stringify(fixed));
+  localStorage.setItem("foodLogLocalDays", "1");
 }
+
+// If the app stays open past midnight, move "Today" to the new day.
+function rollOverToday() {
+  const now = todayKey();
+  if (now === lastSeenTodayKey) return;
+  if (activeFoodDate === lastSeenTodayKey) activeFoodDate = now;
+  lastSeenTodayKey = now;
+  renderFoodLog();
+  updateHomeStats();
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") rollOverToday(); });
+window.addEventListener("focus", rollOverToday);
 
 function getFoodLogAll() {
   return JSON.parse(localStorage.getItem("foodLog") || "{}");
@@ -4321,4 +4358,5 @@ document.getElementById("beer-back-btn").addEventListener("click", () => showTab
 // init — keep this LAST: updateHomeStats reads constants from every
 // module above (cardio, beer planner), which don't exist until defined.
 // ============================================================
+migrateFoodLogToLocalDays();
 updateHomeStats();
