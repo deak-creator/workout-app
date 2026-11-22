@@ -1798,10 +1798,12 @@ const titleByScreen = {
   "recipes-screen": "Recipes",
   "mealplan-screen": "Meal Plan",
   "cardio-screen": "Cardio",
-  "beer-screen": "Beer Planner"
+  "beer-screen": "Beer Planner",
+  "transfer-screen": "New Phone"
 };
 const _origShowTab = showTab;
 showTab = function (id) {
+  if (id !== "transfer-screen") transferStopAll();
   _origShowTab(id);
   const titleEl = document.getElementById("topbar-title");
   if (titleEl && titleByScreen[id]) titleEl.textContent = titleByScreen[id];
@@ -1814,8 +1816,9 @@ showTab = function (id) {
   if (id === "mealplan-screen") renderMealPlan();
   if (id === "cardio-screen") renderCardio();
   if (id === "beer-screen") renderBeerPlanner();
+  if (id === "transfer-screen") { transferStopAll(); transferState = { view: "menu" }; renderTransfer(); }
   // sync bottom tabbar highlight for screens not directly in tabbar (workout/plan detail views)
-  const tabMap = { "setup-screen": "setup-screen", "workout-screen": "setup-screen", "plan-screen": "setup-screen", "exercise-screen": "setup-screen", "recipes-screen": "nutrition-screen", "mealplan-screen": "nutrition-screen", "cardio-screen": "home-screen", "beer-screen": "nutrition-screen" };
+  const tabMap = { "setup-screen": "setup-screen", "workout-screen": "setup-screen", "plan-screen": "setup-screen", "exercise-screen": "setup-screen", "recipes-screen": "nutrition-screen", "mealplan-screen": "nutrition-screen", "cardio-screen": "home-screen", "beer-screen": "nutrition-screen", "transfer-screen": "home-screen" };
   const activeTabId = tabMap[id] || id;
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === activeTabId));
 };
@@ -4353,6 +4356,349 @@ document.getElementById("beer-body").addEventListener("click", e => {
 
 document.getElementById("beer-btn").addEventListener("click", () => showTab("beer-screen"));
 document.getElementById("beer-back-btn").addEventListener("click", () => showTab("nutrition-screen"));
+
+// ============================================================
+// MOVE TO A NEW PHONE — copy every bit of app data across with a looping
+// sequence of QR codes (one code holds ~2 KB, so big diaries need several),
+// or with a backup file when a camera isn't handy.
+// ============================================================
+const TRANSFER_KEYS = [HISTORY_KEY, SAVED_KEY, MEALPLAN_KEY, DISLIKES_KEY, CARDIO_PREFS_KEY, BEER_PLAN_KEY,
+  "foodLog", "foodLogLocalDays", "savedMeals", "nutritionTargets"];
+const TRANSFER_PREFIX = "WAPP1";
+const TRANSFER_CHUNK = 600;                         // characters of data per QR code
+const TRANSFER_FRAME_MS = { normal: 350, slow: 900 }; // how long each code stays on screen
+// `var` (not let) because showTab can run before this section is evaluated.
+var transferState = { view: "menu" };
+
+function transferSnapshot() {
+  const keys = {};
+  TRANSFER_KEYS.forEach(k => { const v = localStorage.getItem(k); if (v !== null) keys[k] = v; });
+  return { app: "workout-app", v: 1, exportedAt: new Date().toISOString(), keys };
+}
+
+function transferParse(raw, fallback) { try { return JSON.parse(raw); } catch (e) { return fallback; } }
+function transferCount(raw) { const v = transferParse(raw, null); return Array.isArray(v) ? v.length : v && typeof v === "object" ? Object.keys(v).length : 0; }
+const transferPlural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+// Human list of what a snapshot holds, e.g. ["12 completed workouts", "84 food entries over 20 days"]
+function transferSummary(keys) {
+  const out = [];
+  const add = (key, fn) => { if (keys[key] != null) { const s = fn(keys[key]); if (s) out.push(s); } };
+  add(HISTORY_KEY, raw => transferCount(raw) && transferPlural(transferCount(raw), "completed workout"));
+  add(SAVED_KEY, raw => transferCount(raw) && transferPlural(transferCount(raw), "saved workout") + " & plans");
+  add("foodLog", raw => {
+    const log = transferParse(raw, {}) || {};
+    const days = Object.values(log).filter(d => Array.isArray(d) && d.length);
+    const entries = days.reduce((n, d) => n + d.length, 0);
+    return entries && `${entries} food ${entries === 1 ? "entry" : "entries"} over ${transferPlural(days.length, "day")}`;
+  });
+  add("savedMeals", raw => transferCount(raw) && transferPlural(transferCount(raw), "saved meal"));
+  add(MEALPLAN_KEY, raw => transferParse(raw, null) && "Your meal plan");
+  add(BEER_PLAN_KEY, raw => transferParse(raw, null) && "Your beer plan");
+  add("nutritionTargets", raw => transferParse(raw, null) && "Calorie & macro targets");
+  add(CARDIO_PREFS_KEY, raw => transferParse(raw, null) && "Cardio settings");
+  add(DISLIKES_KEY, raw => transferCount(raw) && transferPlural(transferCount(raw), "food dislike"));
+  return out;
+}
+
+// ---------- packing: JSON → gzip → base64 (falls back to plain base64) ----------
+function transferBytesToB64(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function transferB64ToBytes(b64) {
+  const s = atob(b64), out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out;
+}
+async function transferPipe(stream, bytes) {
+  const writer = stream.writable.getWriter();
+  writer.write(bytes).catch(() => {}); writer.close().catch(() => {}); // errors surface via the reader below
+  const reader = stream.readable.getReader(), chunks = [];
+  for (;;) { const { done, value } = await reader.read(); if (done) break; chunks.push(value); }
+  const out = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+  let at = 0; chunks.forEach(c => { out.set(c, at); at += c.length; });
+  return out;
+}
+async function transferPack(text) {
+  const bytes = new TextEncoder().encode(text);
+  if (typeof CompressionStream === "function") {
+    try { return "z" + transferBytesToB64(await transferPipe(new CompressionStream("gzip"), bytes)); } catch (e) { /* fall through */ }
+  }
+  return "r" + transferBytesToB64(bytes);
+}
+async function transferUnpack(packed) {
+  const bytes = transferB64ToBytes(packed.slice(1));
+  if (packed[0] === "z") {
+    if (typeof DecompressionStream !== "function") throw new Error("This browser is too old to unpack the data. Update it, or use a backup file instead.");
+    return new TextDecoder().decode(await transferPipe(new DecompressionStream("gzip"), bytes));
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+// Frame text: WAPP1:<session>:<n>:<total>:<data>
+async function transferBuildFrames(snap) {
+  const packed = await transferPack(JSON.stringify(snap));
+  const total = Math.max(1, Math.ceil(packed.length / TRANSFER_CHUNK));
+  const sid = Math.random().toString(36).slice(2, 6);
+  return Array.from({ length: total }, (_, i) => `${TRANSFER_PREFIX}:${sid}:${i + 1}:${total}:${packed.slice(i * TRANSFER_CHUNK, (i + 1) * TRANSFER_CHUNK)}`);
+}
+
+function transferValidate(snap) {
+  if (!snap || snap.app !== "workout-app" || !snap.keys || typeof snap.keys !== "object") throw new Error("That isn't Workout App data.");
+  const keys = {};
+  TRANSFER_KEYS.forEach(k => { if (typeof snap.keys[k] === "string") keys[k] = snap.keys[k]; }); // ignore anything unexpected
+  return { ...snap, keys };
+}
+
+// Replace this phone's data with the snapshot's.
+function transferImport(snap) {
+  const clean = transferValidate(snap);
+  TRANSFER_KEYS.forEach(k => localStorage.removeItem(k));
+  Object.entries(clean.keys).forEach(([k, v]) => localStorage.setItem(k, v));
+  if (!clean.keys.foodLogLocalDays) localStorage.setItem("foodLogLocalDays", "1"); // already on local days
+}
+
+// ---------- QR drawing (vendor/qrcode.js, MIT, loaded on first use) ----------
+function transferLoadQrLib() {
+  if (typeof qrcode === "function") return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "vendor/qrcode.js?v=1";
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("Couldn't load the QR code maker. Check your connection and try again."));
+    document.head.appendChild(s);
+  });
+}
+function transferQrSvg(text) {
+  const qr = qrcode(0, "M"); qr.addData(text, "Byte"); qr.make();
+  const n = qr.getModuleCount(), m = 4; let d = "";
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      if (!qr.isDark(r, c)) continue;
+      let run = 1; while (c + run < n && qr.isDark(r, c + run)) run++;
+      d += `M${c + m} ${r + m}h${run}v1h-${run}z`; c += run - 1;
+    }
+  }
+  return `<svg class="transfer-qr-svg" viewBox="0 0 ${n + 2 * m} ${n + 2 * m}" shape-rendering="crispEdges" role="img" aria-label="Transfer QR code"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+}
+
+// ---------- stop timers / camera ----------
+function transferStopAll() {
+  if (transferState.timer) { clearInterval(transferState.timer); transferState.timer = null; }
+  if (transferState.reader) { try { transferState.reader.reset(); } catch (e) {} transferState.reader = null; }
+  if (transferState.stream) { transferState.stream.getTracks().forEach(t => t.stop()); transferState.stream = null; }
+}
+
+// ---------- sending ----------
+async function transferStartSend() {
+  transferStopAll();
+  const snap = transferSnapshot();
+  transferState = { view: "send", summary: transferSummary(snap.keys), frames: [], index: 0, speed: "normal", error: null };
+  renderTransfer();
+  try {
+    await transferLoadQrLib();
+    transferState.frames = await transferBuildFrames(snap);
+  } catch (e) { transferState.error = e.message; renderTransfer(); return; }
+  if (transferState.view !== "send") return;
+  transferShowFrame();
+  transferRestartTimer();
+}
+function transferRestartTimer() {
+  if (transferState.timer) clearInterval(transferState.timer);
+  transferState.timer = transferState.frames.length > 1
+    ? setInterval(() => { transferState.index = (transferState.index + 1) % transferState.frames.length; transferShowFrame(); }, TRANSFER_FRAME_MS[transferState.speed])
+    : null;
+}
+function transferShowFrame() {
+  const box = document.getElementById("transfer-qr"), label = document.getElementById("transfer-frame-label");
+  if (!box || !transferState.frames.length) return;
+  box.innerHTML = transferQrSvg(transferState.frames[transferState.index]);
+  const total = transferState.frames.length;
+  label.textContent = total === 1 ? "Just one code – hold it steady" : `Code ${transferState.index + 1} of ${total} · keeps looping until the new phone has them all`;
+}
+
+// ---------- receiving ----------
+function transferStartReceive() {
+  transferStopAll();
+  transferState = { view: "receive", sid: null, total: 0, parts: [], status: "Requesting camera access…" };
+  renderTransfer();
+  if (typeof ZXing === "undefined") return transferSetStatus("The scanner didn't load. Check your connection, or use a backup file instead.");
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return transferSetStatus("This browser can't use the camera. Use a backup file instead.");
+  // Like the barcode scanner: call getUserMedia straight from the tap (iOS Safari requirement).
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } })
+    .then(stream => {
+      if (transferState.view !== "receive") { stream.getTracks().forEach(t => t.stop()); return; }
+      transferState.stream = stream;
+      const video = document.getElementById("transfer-video");
+      video.srcObject = stream; video.play().catch(() => {});
+      const reader = ZXing.BrowserQRCodeReader ? new ZXing.BrowserQRCodeReader() : new ZXing.BrowserMultiFormatReader();
+      try { reader.timeBetweenScansMillis = 120; reader.timeBetweenDecodingAttempts = 60; } catch (e) {}
+      transferState.reader = reader;
+      transferSetStatus("Point this camera at the code on your old phone");
+      reader.decodeFromStream(stream, video, result => { if (result) transferReceiveText(result.getText()); });
+    })
+    .catch(err => transferSetStatus(err && err.name === "NotAllowedError"
+      ? "Camera permission was denied. Allow camera access for this site in your browser settings, then try again."
+      : "Camera unavailable (" + (err && err.message ? err.message : "unknown error") + "). Use a backup file instead."));
+}
+function transferSetStatus(text) {
+  transferState.status = text;
+  const el = document.getElementById("transfer-status"); if (el) el.textContent = text;
+}
+// Feed one scanned QR text in. Returns true if it was one of ours.
+function transferReceiveText(text) {
+  const m = /^WAPP1:([a-z0-9]+):(\d+):(\d+):([\s\S]*)$/.exec(text || "");
+  if (transferState.view !== "receive") return false;
+  if (!m) { transferSetStatus("That's a different QR code – point at the one on your old phone"); return false; }
+  const [, sid, nStr, totalStr, data] = m, n = +nStr, total = +totalStr;
+  if (!total || n < 1 || n > total) return false;
+  if (sid !== transferState.sid) Object.assign(transferState, { sid, total, parts: new Array(total).fill(null) });
+  if (transferState.parts[n - 1] === null) transferState.parts[n - 1] = data;
+  const got = transferState.parts.filter(p => p !== null).length;
+  transferRenderProgress(got, total);
+  if (got === total && !transferState.finishing) { transferState.finishing = true; transferFinishReceive(); }
+  return true;
+}
+function transferRenderProgress(got, total) {
+  const bar = document.getElementById("transfer-progress-fill"), dots = document.getElementById("transfer-dots");
+  if (bar) bar.style.width = `${Math.round(got / total * 100)}%`;
+  if (dots) dots.innerHTML = transferState.parts.map(p => `<span class="transfer-dot${p !== null ? " got" : ""}"></span>`).join("");
+  transferSetStatus(got === total ? "Got everything – unpacking…" : `Got ${got} of ${total} codes – keep holding steady`);
+}
+async function transferFinishReceive() {
+  try {
+    const snap = transferValidate(JSON.parse(await transferUnpack(transferState.parts.join(""))));
+    transferStopAll();
+    transferShowReady(snap);
+  } catch (e) {
+    transferState.finishing = false;
+    transferState.parts = new Array(transferState.total).fill(null);
+    transferSetStatus("Something didn't scan cleanly – starting again. " + (e.message || ""));
+  }
+}
+function transferShowReady(snap) {
+  transferState = { view: "ready", snap, summary: transferSummary(snap.keys), existing: transferSummary(transferSnapshot().keys) };
+  renderTransfer();
+}
+
+// ---------- backup file ----------
+async function transferSaveFile() {
+  const snap = transferSnapshot();
+  const name = `workout-app-backup-${todayKey()}.json`;
+  const blob = new Blob([JSON.stringify(snap)], { type: "application/json" });
+  try {
+    const file = new File([blob], name, { type: "application/json" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "Workout App backup" }); return; }
+  } catch (e) { if (e && e.name === "AbortError") return; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+function transferLoadFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try { transferShowReady(transferValidate(JSON.parse(reader.result))); }
+    catch (e) { transferState = { view: "menu", error: "That file isn't a Workout App backup." }; renderTransfer(); }
+  };
+  reader.readAsText(file);
+}
+
+// ---------- rendering ----------
+function transferListHtml(items, empty) {
+  return items.length ? `<ul class="transfer-list">${items.map(i => `<li>${i}</li>`).join("")}</ul>` : `<p class="transfer-muted">${empty}</p>`;
+}
+function renderTransfer() {
+  const body = document.getElementById("transfer-body");
+  if (!body) return;
+  const s = transferState, appUrl = location.origin + location.pathname.replace(/index\.html$/, "");
+  if (s.view === "send") {
+    body.innerHTML = `
+      <h2 class="transfer-title">Send from this phone</h2>
+      ${s.error ? `<p class="transfer-error">${s.error}</p>` : `
+      <div id="transfer-qr" class="transfer-qr"><p class="transfer-muted">Making your codes…</p></div>
+      <p id="transfer-frame-label" class="transfer-frame-label"></p>
+      <div class="transfer-actions">
+        <button type="button" id="transfer-speed-btn" class="primary-btn secondary">${s.speed === "slow" ? "Normal speed" : "Slow down"}</button>
+        <button type="button" id="transfer-stop-btn" class="primary-btn secondary">Done</button>
+      </div>`}
+      <div class="card transfer-card">
+        <p class="transfer-step"><strong>On your new phone:</strong> open <span class="transfer-url">${appUrl}</span>, tap <strong>Move to a New Phone → Receive</strong> and point the camera here. Turn your brightness up.</p>
+        <p class="transfer-sub">Sending</p>
+        ${transferListHtml(s.summary, "There's no data on this phone yet.")}
+      </div>`;
+    if (s.frames && s.frames.length) transferShowFrame();
+  } else if (s.view === "receive") {
+    body.innerHTML = `
+      <h2 class="transfer-title">Receive on this phone</h2>
+      <div class="transfer-video-wrap"><video id="transfer-video" autoplay playsinline muted></video><div class="scanner-guide" aria-hidden="true"></div></div>
+      <div class="transfer-progress"><div id="transfer-progress-fill" class="transfer-progress-fill" style="width:0%"></div></div>
+      <div id="transfer-dots" class="transfer-dots"></div>
+      <p id="transfer-status" class="transfer-status">${s.status}</p>
+      <button type="button" id="transfer-cancel-btn" class="primary-btn secondary">Cancel</button>`;
+  } else if (s.view === "ready") {
+    const when = new Date(s.snap.exportedAt);
+    body.innerHTML = `
+      <h2 class="transfer-title">Ready to copy ✓</h2>
+      <div class="card transfer-card">
+        <p class="transfer-sub">From your old phone${isNaN(when) ? "" : ` · ${when.toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}`}</p>
+        ${transferListHtml(s.summary, "No data in it.")}
+      </div>
+      ${s.existing.length ? `<div class="card transfer-card transfer-warn"><p class="transfer-sub">This will replace what's on this phone</p>${transferListHtml(s.existing, "")}</div>` : ""}
+      <button type="button" id="transfer-apply-btn" class="primary-btn">Copy to this phone</button>
+      <button type="button" id="transfer-cancel-btn" class="primary-btn secondary">Cancel</button>`;
+  } else if (s.view === "done") {
+    body.innerHTML = `<div class="transfer-done"><div class="transfer-done-icon" aria-hidden="true">✅</div><h2 class="transfer-title">All moved across</h2><p class="transfer-muted">Reloading the app…</p></div>`;
+  } else {
+    const mine = transferSummary(transferSnapshot().keys);
+    body.innerHTML = `
+      <h2 class="transfer-title">Move to a New Phone</h2>
+      <p class="transfer-muted">Copy your workouts, food diary, saved meals, plans and settings to another phone with a QR code. Nothing is uploaded anywhere – it goes straight from screen to camera.</p>
+      ${s.error ? `<p class="transfer-error">${s.error}</p>` : ""}
+      <button type="button" id="transfer-send-btn" class="primary-btn">Send from this phone (old phone)</button>
+      <button type="button" id="transfer-receive-btn" class="primary-btn secondary">Receive on this phone (new phone)</button>
+      <div class="card transfer-card">
+        <p class="transfer-sub">On this phone</p>
+        ${transferListHtml(mine, "No data yet – this looks like the new phone.")}
+      </div>
+      <div class="card transfer-card">
+        <p class="transfer-sub">No camera? Use a backup file</p>
+        <p class="transfer-muted">Save a file here, send it to the new phone (email, Drive, AirDrop…), then load it there.</p>
+        <div class="transfer-actions">
+          <button type="button" id="transfer-save-file-btn" class="primary-btn secondary">Save backup file</button>
+          <button type="button" id="transfer-load-file-btn" class="primary-btn secondary">Load backup file</button>
+        </div>
+        <input type="file" id="transfer-file-input" accept=".json,application/json" hidden>
+      </div>`;
+  }
+}
+
+document.getElementById("transfer-back-btn").addEventListener("click", () => {
+  if (transferState.view === "menu") { transferStopAll(); showTab("home-screen"); return; }
+  transferStopAll(); transferState = { view: "menu" }; renderTransfer();
+});
+document.getElementById("transfer-body").addEventListener("click", e => {
+  const id = e.target.closest("button") && e.target.closest("button").id;
+  if (id === "transfer-send-btn") transferStartSend();
+  else if (id === "transfer-receive-btn") transferStartReceive();
+  else if (id === "transfer-stop-btn" || id === "transfer-cancel-btn") { transferStopAll(); transferState = { view: "menu" }; renderTransfer(); }
+  else if (id === "transfer-speed-btn") {
+    transferState.speed = transferState.speed === "slow" ? "normal" : "slow";
+    e.target.closest("button").textContent = transferState.speed === "slow" ? "Normal speed" : "Slow down";
+    transferRestartTimer();
+  }
+  else if (id === "transfer-save-file-btn") transferSaveFile();
+  else if (id === "transfer-load-file-btn") document.getElementById("transfer-file-input").click();
+  else if (id === "transfer-apply-btn") {
+    transferImport(transferState.snap);
+    transferState = { view: "done" }; renderTransfer();
+    setTimeout(() => { try { location.reload(); } catch (err) {} }, 1200);
+  }
+});
+document.getElementById("transfer-body").addEventListener("change", e => {
+  if (e.target.id === "transfer-file-input" && e.target.files && e.target.files[0]) transferLoadFile(e.target.files[0]);
+});
 
 // ============================================================
 // init — keep this LAST: updateHomeStats reads constants from every
