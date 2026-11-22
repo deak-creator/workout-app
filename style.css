@@ -1687,3 +1687,32 @@ html, body { background: radial-gradient(ellipse at top, #eef0f5 0%, #f3f4f8 60%
 /* ===== v39: keep the bottom tab bar fixed in place ===== */
 html, body { overflow: hidden; }
 .screen { overscroll-behavior-y: contain; }
+
+/* ---------- Move to a new phone ---------- */
+#transfer-back-btn { display: block; margin-right: auto; text-align: left; }
+#transfer-body { display: flex; flex-direction: column; gap: 12px; padding-bottom: 24px; }
+.transfer-title { font-size: 22px; font-weight: 800; margin: 6px 0 0; }
+.transfer-muted { color: #64748b; font-size: 14px; line-height: 1.45; margin: 0; }
+.transfer-error { background: #fee2e2; color: #b91c1c; border-radius: 12px; padding: 10px 12px; font-size: 14px; font-weight: 600; margin: 0; }
+.transfer-card { padding: 14px 16px; margin: 0; }
+.transfer-warn { border: 2px solid #fdba74; }
+.transfer-sub { font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #ff2d55; margin: 0 0 6px; }
+.transfer-list { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.6; }
+.transfer-step { font-size: 14px; line-height: 1.5; margin: 0 0 12px; }
+.transfer-url { font-weight: 700; word-break: break-all; }
+.transfer-actions { display: flex; gap: 10px; }
+.transfer-actions .primary-btn { flex: 1; margin: 0; }
+.transfer-qr { background: #fff; border-radius: 16px; padding: 10px; box-shadow: 0 4px 18px rgba(15, 23, 42, 0.12); width: 100%; max-width: 360px; align-self: center; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; box-sizing: border-box; }
+.transfer-qr-svg { width: 100%; height: 100%; display: block; }
+.transfer-frame-label { text-align: center; font-size: 13px; font-weight: 700; color: #475569; margin: 0; }
+.transfer-video-wrap { position: relative; width: 100%; aspect-ratio: 1; border-radius: 18px; overflow: hidden; background: #000; }
+.transfer-video-wrap video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.transfer-progress { height: 10px; border-radius: 6px; background: #e2e8f0; overflow: hidden; }
+.transfer-progress-fill { height: 100%; background: linear-gradient(90deg, #ff2d55, #ff6b3d); transition: width 0.2s; }
+.transfer-dots { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
+.transfer-dots:empty { display: none; }
+.transfer-dot { width: 10px; height: 10px; border-radius: 3px; background: #e2e8f0; }
+.transfer-dot.got { background: #22c55e; }
+.transfer-status { text-align: center; font-size: 14px; font-weight: 600; color: #334155; margin: 0; }
+.transfer-done { text-align: center; padding: 40px 0; }
+.transfer-done-icon { font-size: 56px; }
