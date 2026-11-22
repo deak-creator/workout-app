@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Workout App">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <meta name="theme-color" content="#f3f4f8">
-<link rel="stylesheet" href="style.css?v=43">
+<link rel="stylesheet" href="style.css?v=44">
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js" defer></script>
 </head>
 <body>
@@ -108,6 +108,15 @@
 
     <button type="button" class="action-tile-mini" data-goto="nutrition-screen" data-openscan="1">
       <span aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8a2 2 0 0 1 2-2h1.5l1-2h7l1 2H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8z"/><circle cx="12" cy="13" r="3.5"/></svg></span> Scan Food
+    </button>
+
+    <button type="button" class="dash-card" data-goto="transfer-screen" id="home-transfer-card">
+      <span class="dash-card-icon" aria-hidden="true"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/></svg></span>
+      <span class="dash-card-text">
+        <span class="dash-card-title">Move to a New Phone</span>
+        <span class="dash-card-sub">Transfer all your data with a QR code</span>
+      </span>
+      <span class="dash-card-arrow" aria-hidden="true">›</span>
     </button>
 
   </main>
@@ -517,6 +526,11 @@
     <div id="cardio-body"></div>
   </main>
 
+  <main id="transfer-screen" class="screen" aria-label="Move to a new phone">
+    <button type="button" id="transfer-back-btn" class="saved-folder-back">‹ Back</button>
+    <div id="transfer-body"></div>
+  </main>
+
   <main id="beer-screen" class="screen" aria-label="Beer planner">
     <button type="button" id="beer-back-btn" class="saved-folder-back">‹ Food</button>
     <div id="beer-body"></div>
@@ -555,6 +569,6 @@
   </nav>
 
 </div>
-<script src="app.js?v=43"></script>
+<script src="app.js?v=44"></script>
 </body>
 </html>
