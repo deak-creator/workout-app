@@ -1,4 +1,4 @@
-const CACHE = "workout-app-v43";
+const CACHE = "workout-app-v44";
 const ASSETS = [
   "./",
   "./index.html",
@@ -6,7 +6,8 @@ const ASSETS = [
   "./app.js",
   "./manifest.json",
   "./data/exercises.json",
-  "./data/recipes.json"
+  "./data/recipes.json",
+  "./vendor/qrcode.js"
 ];
 
 self.addEventListener("install", e => {
