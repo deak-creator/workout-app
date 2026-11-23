@@ -395,6 +395,14 @@ function formatSetLabel(ex, seconds, repStyle) {
   return `${seconds}s`;
 }
 
+// real-world timing used to size workouts (rest matches the in-app rest timer)
+const SET_WORK_SECONDS = 45;            // one working set
+const STRAIGHT_SETS = 3;                // sets per exercise
+const EXERCISE_CHANGE_SECONDS = 90;     // move to the next exercise, set up, load the bar
+const CIRCUIT_TRANSITION_SECONDS = 15;  // walk to the next circuit station
+const STRAIGHT_SET_EXERCISE_MIN =        // ~7.75 min: 3 x 45 s work + 2 x 2 min rest + 1.5 min change-over
+  (STRAIGHT_SETS * SET_WORK_SECONDS + (STRAIGHT_SETS - 1) * 120 + EXERCISE_CHANGE_SECONDS) / 60;
+
 // ============================================================
 // SINGLE-DAY WORKOUT GENERATOR (used by Quick Workout + each plan day)
 // ============================================================
@@ -436,8 +444,13 @@ function generateWorkout(params, dayFocus) {
   const cooldownTime = Math.max(3, Math.round(duration * 0.1));
   const mainTime = duration - warmupTime - cooldownTime;
 
-  const exPerBlock = duration <= 15 ? 4 : duration <= 30 ? 6 : duration <= 45 ? 8 : 10;
-  const rounds = effectiveGoal === "mobility" ? 1 : duration <= 20 ? 2 : 3;
+  // Strength/general are done as straight sets (3 sets with a rest timer between), so size
+  // them by real time per exercise. Before v46 they were budgeted like a no-rest circuit:
+  // a "45 min" workout had 8 exercises x 3 sets of 15-20 reps — 80+ minutes in practice.
+  const straightSets = !isCircuit && effectiveGoal !== "mobility";
+  const exPerBlock = straightSets ? Math.max(2, Math.round(mainTime / STRAIGHT_SET_EXERCISE_MIN))
+    : duration <= 15 ? 4 : duration <= 30 ? 6 : duration <= 45 ? 8 : 10;
+  const rounds = effectiveGoal === "mobility" ? 1 : straightSets ? STRAIGHT_SETS : duration <= 20 ? 2 : 3;
 
   const mainPool = ranked.filter(ex => ex.type !== "mobility");
   const warmupPool = EXERCISES.filter(ex =>
@@ -453,8 +466,8 @@ function generateWorkout(params, dayFocus) {
       ? splitCircuitPicks(mainPool, splitGroup, mainExCount)
       : pickUnique(mainPool.length ? mainPool : ranked, mainExCount);
 
-  const perExerciseSeconds = mainExercises.length
-    ? Math.max(20, Math.floor((mainTime * 60) / (mainExercises.length * rounds)))
+  const perExerciseSeconds = straightSets ? SET_WORK_SECONDS : mainExercises.length
+    ? Math.max(20, Math.floor((mainTime * 60) / (mainExercises.length * rounds)) - (isCircuit ? CIRCUIT_TRANSITION_SECONDS : 0))
     : 30;
 
   const blocks = [];
@@ -469,7 +482,7 @@ function generateWorkout(params, dayFocus) {
 
   if (rounds > 1 && effectiveGoal !== "mobility") {
     blocks.push({
-      section: `Main (${rounds} rounds)`,
+      section: straightSets ? `Main · ${rounds} sets each` : `Main (${rounds} rounds)`,
       items: mainExercises.map(ex => ({ ...ex, durationLabel: formatSetLabel(ex, perExerciseSeconds, promptBias.repStyle), _seconds: perExerciseSeconds, _role: "main", _focus: null }))
     });
   } else {
@@ -930,7 +943,7 @@ function removeExerciseFromWorkout(name) {
 function customWorkoutMinutes(items) {
   const mins = items.reduce((sum, ex) => {
     const sets = ex._log ? ex._log.sets.length : 3;
-    return sum + sets * (ex.type === "strength" ? 2.25 : 1.2);
+    return sum + sets * (ex.type === "strength" ? STRAIGHT_SET_EXERCISE_MIN / STRAIGHT_SETS : 1.2);
   }, 0);
   return Math.max(5, Math.round(mins / 5) * 5);
 }
@@ -1068,8 +1081,10 @@ function exerciseSetSummary(ex) {
   if (weights.length) parts.push(`${Math.max(...weights)} kg`);
   return parts.join(" • ");
 }
+const REST_SECONDS = 120; // rest between sets (was 90 before v46, which the label rounded up to "2 min")
+const fmtRest = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 function defaultLog() {
-  return { sets: [{ reps: "", weight: "", done: false }, { reps: "", weight: "", done: false }, { reps: "", weight: "", done: false }], note: "", restSeconds: 90 };
+  return { sets: [{ reps: "", weight: "", done: false }, { reps: "", weight: "", done: false }, { reps: "", weight: "", done: false }], note: "", restSeconds: REST_SECONDS };
 }
 
 // ============================================================
@@ -1186,7 +1201,8 @@ function renderExerciseHistoryTab(body) {
 
 function renderExerciseLogTab(body) {
   const log = exDetail.log;
-  const restLabel = `Rest for ${Math.round(log.restSeconds / 60) || 1} min`;
+  if (!log.restSeconds || log.restSeconds === 90) log.restSeconds = REST_SECONDS; // 90 was only ever the old default
+  const restLabel = log.restSeconds % 60 ? `Rest for ${fmtRest(log.restSeconds)}` : `Rest for ${log.restSeconds / 60} min`;
   body.innerHTML = `
     <div class="exd-complete" hidden>
       <div class="exd-complete-box"><span class="exd-tick">✓</span> All sets completed</div>
@@ -1261,11 +1277,13 @@ function renderExerciseLogTab(body) {
     const btn = e.currentTarget;
     const display = body.querySelector(".rest-time-display");
     stopRestTimer();
-    let remaining = log.restSeconds;
+    // counts down from the clock, not by ticks, so it stays right if the screen locks mid-rest
+    const endsAt = Date.now() + log.restSeconds * 1000;
     btn.disabled = true;
+    display.textContent = `Rest: ${fmtRest(log.restSeconds)}`;
     restInterval = setInterval(() => {
-      remaining -= 1;
-      display.textContent = `Rest: ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`;
+      const remaining = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+      display.textContent = `Rest: ${fmtRest(remaining)}`;
       if (remaining <= 0) {
         stopRestTimer();
         display.textContent = restLabel;
