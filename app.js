@@ -5,6 +5,11 @@ let lastParams = null;
 let activeWeekIndex = 0;
 let activePlanDayIndex = null; // null = jump to the first unfinished day
 
+// catch anything that goes wrong anywhere: log it, save the workout, tell the user
+// (handlers are hoisted function declarations further down — see CRASH SAFETY)
+window.addEventListener("error", e => { try { onAppError(e.error || e.message, "error"); } catch (_) {} });
+window.addEventListener("unhandledrejection", e => { try { onAppError(e.reason, "promise"); } catch (_) {} });
+
 const ALL_EQUIPMENT = ["bodyweight", "dumbbells", "bands", "kettlebell", "pullup bar", "barbell", "cable machine", "bench", "machine"];
 const HOME_EQUIPMENT = ["bodyweight", "dumbbells", "bands", "kettlebell", "pullup bar"];
 const GYM_EQUIPMENT = ALL_EQUIPMENT; // gyms typically have everything, including home-friendly gear
@@ -656,7 +661,7 @@ const MAX_RECOVERY_HOURS = 72;       // heavy session
 const FRESH_THRESHOLD = 90;          // % at or above which a muscle counts as "fresh"
 
 function getWorkoutHistory() {
-  return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+  return readStoredJSON(HISTORY_KEY, []);
 }
 function setWorkoutHistory(list) {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
@@ -780,6 +785,8 @@ function renderWorkout(workout) {
   renderCompleteBanner(document.getElementById("wo-complete-banner"), allItems, workout._historyId, "Workout");
   updateStartButton();
   persistSaved(workout);
+  draftKind = "workout";
+  saveWorkoutDraft();
 }
 
 // green "complete" banner for a workout or plan day once every exercise is logged
@@ -820,6 +827,7 @@ function finishCurrentWorkout() {
   if (!entry) return;
   updateStartButton();
   persistSaved(currentWorkout);
+  saveWorkoutDraft(); // finished, so this clears the crash draft
   showTab("recovery-screen");
 }
 document.getElementById("finish-btn").addEventListener("click", finishCurrentWorkout);
@@ -1110,6 +1118,7 @@ function openExerciseDetail(ex, returnTo, onDone) {
   renderExerciseDetail();
   showTab("exercise-screen");
   scrollScreenTo(0);
+  saveWorkoutDraft();
 }
 
 function closeExerciseDetail(save) {
@@ -1119,11 +1128,13 @@ function closeExerciseDetail(save) {
   if (save) {
     d.ex._log = d.log;
     d.ex._done = d.log.sets.some(st => st.done);
+    touchWorkoutDraft();
   }
   exDetail = null;
   showTab(d.returnTo);
   if (d.onDone) d.onDone();
   scrollScreenTo(d.scrollY);
+  saveWorkoutDraft();
 }
 
 function renderExerciseDetail() {
@@ -1199,7 +1210,7 @@ function renderExerciseLogTab(body) {
   `;
   const note = body.querySelector(".note-input");
   note.value = log.note || "";
-  note.addEventListener("input", () => { log.note = note.value; });
+  note.addEventListener("input", () => { log.note = note.value; touchWorkoutDraft(true); });
 
   const rowsEl = body.querySelector(".set-rows");
   function refreshStatus() {
@@ -1221,11 +1232,12 @@ function renderExerciseLogTab(body) {
         <button type="button" class="set-check${st.done ? " done" : ""}" aria-label="Mark set ${i + 1} complete">✓</button>
       `;
       // typing only updates the model, no re-render, so the iPhone keyboard stays open
-      r.querySelector(".set-reps").addEventListener("input", e => { st.reps = e.target.value; });
-      r.querySelector(".set-weight").addEventListener("input", e => { st.weight = e.target.value; });
+      r.querySelector(".set-reps").addEventListener("input", e => { st.reps = e.target.value; touchWorkoutDraft(true); });
+      r.querySelector(".set-weight").addEventListener("input", e => { st.weight = e.target.value; touchWorkoutDraft(true); });
       r.querySelector(".set-check").addEventListener("click", () => {
         st.done = !st.done;
         renderSetRows();
+        touchWorkoutDraft();
       });
       rowsEl.appendChild(r);
     });
@@ -1237,10 +1249,12 @@ function renderExerciseLogTab(body) {
     const prev = log.sets[log.sets.length - 1];
     log.sets.push({ reps: prev ? prev.reps : "", weight: prev ? prev.weight : "", done: false });
     renderSetRows();
+    touchWorkoutDraft();
   });
   body.querySelector(".exd-restart-btn").addEventListener("click", () => {
     log.sets.forEach(st => { st.done = false; });
     renderSetRows();
+    touchWorkoutDraft();
   });
 
   body.querySelector(".rest-play-btn").addEventListener("click", e => {
@@ -1285,6 +1299,7 @@ document.getElementById("save-btn").addEventListener("click", () => {
 // RENDERING — multi-week plan
 // ============================================================
 function renderPlan(plan) {
+  draftKind = "plan";
   const titleMap = { strength: "Strength", cardio: "Cardio", fatloss: "Fat Loss", mobility: "Mobility", general: "General Fitness" };
   document.getElementById("plan-title").textContent =
     `${titleMap[plan.goal]} · ${plan.daysPerWeek}x/wk · ${plan.weeksCount}wk`;
@@ -1333,7 +1348,7 @@ function renderPlan(plan) {
         <div><div class="day-name">${dayName} · Rest Day</div><div class="day-focus">Recover today and come back stronger.</div></div>
         <div class="rest-icon">🌙</div>
       </div>`;
-    persistSaved(plan);
+    persistSaved(plan); saveWorkoutDraft();
     return;
   }
   const allExercises = day.blocks.flatMap(b => b.items);
@@ -1366,11 +1381,11 @@ function renderPlan(plan) {
         goal: plan.goal,
         duration: day.duration
       });
-      if (entry) { persistSaved(plan); showTab("recovery-screen"); }
+      if (entry) { persistSaved(plan); saveWorkoutDraft(); showTab("recovery-screen"); }
     });
     dayListEl.appendChild(finishDay);
   }
-  persistSaved(plan);
+  persistSaved(plan); saveWorkoutDraft();
 }
 
 // a plan day counts as done once it's been finished, or every exercise in it is logged
@@ -1404,7 +1419,7 @@ const GOAL_TITLES = { strength: "Strength", cardio: "Cardio", fatloss: "Fat Loss
 
 // every saved entry gets a stable id so logged progress can be written back to it
 function getSavedEntries() {
-  const list = JSON.parse(localStorage.getItem(SAVED_KEY) || "[]");
+  const list = readStoredJSON(SAVED_KEY, []);
   let changed = false;
   list.forEach(e => {
     if (!e.id) { e.id = `s${Date.now()}${Math.random().toString(36).slice(2, 7)}`; changed = true; }
@@ -1432,7 +1447,7 @@ function saveEntry(kind, data) {
 // keep a saved workout/plan's ticks in sync after every change (so progress survives closing the app)
 function persistSaved(data) {
   if (!data || !data._savedId) return;
-  const list = JSON.parse(localStorage.getItem(SAVED_KEY) || "[]");
+  const list = readStoredJSON(SAVED_KEY, []);
   const i = list.findIndex(e => e.id === data._savedId);
   if (i < 0) { delete data._savedId; return; }
   list[i].data = data;
@@ -1874,7 +1889,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 window.addEventListener("focus", rollOverToday);
 
 function getFoodLogAll() {
-  return JSON.parse(localStorage.getItem("foodLog") || "{}");
+  return readStoredJSON("foodLog", {});
 }
 
 function getFoodLogFor(key) {
@@ -2377,7 +2392,7 @@ let qaUnitPopupTargetId = null;
 let qaSavedMeals = []; // loaded lazily
 
 function qaGetSavedMeals() {
-  return JSON.parse(localStorage.getItem("savedMeals") || "[]");
+  return readStoredJSON("savedMeals", []);
 }
 function qaSetSavedMeals(meals) {
   localStorage.setItem("savedMeals", JSON.stringify(meals));
@@ -4701,8 +4716,237 @@ document.getElementById("transfer-body").addEventListener("change", e => {
 });
 
 // ============================================================
+// CRASH SAFETY — auto-save the workout in progress, resume after a crash
+// ============================================================
+// Phones kill backgrounded web apps (memory pressure, screen lock during a
+// rest, an update reload). Until v45 a session only lived in memory until
+// Finish, so a crash lost every set. Now the workout/plan being logged —
+// including the exercise screen that's open and its unsaved ticks — is
+// mirrored to localStorage on every change and offered back on next launch.
+const DRAFT_KEY = "activeWorkoutDraft";
+const DEVICE_LOCAL_KEYS = [DRAFT_KEY, "appErrorLog"]; // per-phone, never moved to a new phone
+const DRAFT_MAX_AGE_MS = 24 * 3600 * 1000;
+let draftKind = null;   // "workout" | "plan": whichever was rendered last
+let draftTimer = null;
+
+function draftContainer() {
+  return draftKind === "plan" ? currentPlan : draftKind === "workout" ? currentWorkout : null;
+}
+
+// where an exercise sits: [block, item] in a workout, [week, day, block, item] in a plan
+function draftPathOf(ex, data, kind) {
+  const find = blocks => {
+    for (let b = 0; b < (blocks || []).length; b++) { const i = blocks[b].items.indexOf(ex); if (i >= 0) return [b, i]; }
+    return null;
+  };
+  if (!ex || !data) return null;
+  if (kind === "workout") return find(data.blocks);
+  for (let w = 0; w < data.weeks.length; w++) {
+    for (let d = 0; d < data.weeks[w].days.length; d++) {
+      const p = find(data.weeks[w].days[d].blocks);
+      if (p) return [w, d, ...p];
+    }
+  }
+  return null;
+}
+function draftExAt(data, kind, path) {
+  try {
+    const blocks = kind === "workout" ? data.blocks : data.weeks[path[0]].days[path[1]].blocks;
+    const [b, i] = path.slice(-2);
+    return blocks[b].items[i] || null;
+  } catch (e) { return null; }
+}
+
+// sets ticked in parts that haven't been finished yet (the open exercise counts its live log)
+function draftDoneSets(kind, data, liveEx, liveLog) {
+  const groups = kind === "workout" ? (data._historyId ? [] : [data.blocks])
+    : data.weeks.flatMap(wk => wk.days).filter(d => !d.isRest && !d._historyId && d.blocks).map(d => d.blocks);
+  return groups.flat().flatMap(b => b.items).reduce((n, ex) => {
+    const log = ex === liveEx ? liveLog : ex._log;
+    return n + (log && log.sets ? log.sets.filter(s => s.done).length : 0);
+  }, 0);
+}
+
+// write (or clear) the draft for whatever's being logged right now
+function saveWorkoutDraft() {
+  clearTimeout(draftTimer); draftTimer = null;
+  try {
+    const data = draftContainer();
+    if (!data) return;
+    const path = exDetail ? draftPathOf(exDetail.ex, data, draftKind) : null;
+    const sets = draftDoneSets(draftKind, data, path && exDetail.ex, path && exDetail.log);
+    if (!data._touchedAt || !sets) { localStorage.removeItem(DRAFT_KEY); return; }
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({
+      v: 1, kind: draftKind, data, sets, params: lastParams,
+      week: activeWeekIndex, day: activePlanDayIndex,
+      detail: path ? { path, log: exDetail.log, tab: exDetail.tab, returnTo: exDetail.returnTo } : null,
+      touchedAt: data._touchedAt, savedAt: Date.now()
+    }, (k, v) => v instanceof Set ? [...v] : v));
+  } catch (e) { logAppError(e, "saveWorkoutDraft"); }
+}
+
+// the user logged/edited something: mark the session as in progress and save it
+function touchWorkoutDraft(debounced) {
+  const data = draftContainer();
+  if (!data || (exDetail && !draftPathOf(exDetail.ex, data, draftKind))) return;
+  data._touchedAt = Date.now();
+  if (!debounced) { saveWorkoutDraft(); return; }
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(saveWorkoutDraft, 400);
+}
+
+function readWorkoutDraft() {
+  const d = readStoredJSON(DRAFT_KEY, null);
+  if (!d || !d.data || !d.sets || (d.kind !== "workout" && d.kind !== "plan")) return null;
+  if (d.kind === "workout" ? !Array.isArray(d.data.blocks) : !Array.isArray(d.data.weeks)) return null;
+  if (Date.now() - (d.touchedAt || d.savedAt || 0) > DRAFT_MAX_AGE_MS) return null;
+  return d;
+}
+
+function draftTitle(d) {
+  if (d.kind === "plan") {
+    const wk = d.data.weeks[d.week || 0], day = wk && d.day != null ? wk.days[d.day] : null;
+    return day && day.focus ? `Week ${(d.week || 0) + 1} · Day ${d.day + 1} · ${day.focus}` : "your plan";
+  }
+  if (d.data.custom) return d.data.name || "your workout";
+  const top = workoutTopMuscles(d.data.blocks);
+  return top.length ? top.map(t => titleCase(t.muscle)).join(", ") : "your workout";
+}
+
+function resumeWorkoutDraft(d) {
+  const p = d.params || {};
+  lastParams = { ...p, equipment: new Set(p.equipment || []), muscles: new Set(p.muscles || []) };
+  let onDone;
+  if (d.kind === "plan") {
+    currentPlan = d.data;
+    activeWeekIndex = Math.min(d.week || 0, d.data.weeks.length - 1);
+    activePlanDayIndex = d.day == null ? null : d.day;
+    renderPlan(currentPlan);
+    showTab("plan-screen");
+    onDone = () => renderPlan(currentPlan);
+  } else {
+    renderWorkout(d.data);
+    showTab("workout-screen");
+    onDone = () => renderWorkout(currentWorkout);
+  }
+  const ex = d.detail && d.detail.log ? draftExAt(d.data, d.kind, d.detail.path) : null;
+  if (ex) {
+    openExerciseDetail(ex, d.detail.returnTo || (d.kind === "plan" ? "plan-screen" : "workout-screen"), onDone);
+    exDetail.log = d.detail.log;
+    exDetail.tab = d.detail.tab === "history" ? "history" : "log";
+    renderExerciseDetail();
+  }
+  saveWorkoutDraft();
+}
+
+// on launch: "Resume your workout?" if the app closed mid-session
+function offerWorkoutResume() {
+  let d = null;
+  try { d = readWorkoutDraft(); } catch (e) { logAppError(e, "readWorkoutDraft"); }
+  if (!d) { localStorage.removeItem(DRAFT_KEY); return; }
+  const mins = Math.max(1, Math.round((Date.now() - (d.touchedAt || d.savedAt)) / 60000));
+  const ago = mins < 60 ? `${mins} min ago` : `${Math.round(mins / 60)} h ago`;
+  const modal = document.createElement("div");
+  modal.className = "goal-modal resume-modal";
+  modal.id = "resume-modal";
+  modal.innerHTML = `
+    <div class="goal-modal-card resume-card" role="dialog" aria-labelledby="resume-title">
+      <div class="resume-icon">💪</div>
+      <h2 id="resume-title">Resume your workout?</h2>
+      <p class="resume-text">The app closed before you finished. Your progress was saved:</p>
+      <div class="resume-summary"><strong class="resume-name"></strong>
+        <span>${d.sets} set${d.sets === 1 ? "" : "s"} logged · ${ago}</span></div>
+      <div class="goal-modal-actions">
+        <button type="button" class="primary-btn secondary" id="resume-discard-btn">Discard</button>
+        <button type="button" class="primary-btn" id="resume-go-btn">Resume</button>
+      </div>
+    </div>`;
+  modal.querySelector(".resume-name").textContent = draftTitle(d); // custom names are user text
+  document.body.appendChild(modal);
+  modal.querySelector("#resume-go-btn").addEventListener("click", () => {
+    modal.remove();
+    try { resumeWorkoutDraft(d); } catch (e) { logAppError(e, "resumeWorkoutDraft"); showAppErrorToast(); }
+  });
+  const discard = modal.querySelector("#resume-discard-btn");
+  discard.addEventListener("click", () => {
+    if (!discard.dataset.armed) { discard.dataset.armed = "1"; discard.textContent = "Tap again to discard"; return; }
+    localStorage.removeItem(DRAFT_KEY);
+    modal.remove();
+  });
+}
+
+// flush the moment the app is backgrounded — that's when phones kill it
+document.addEventListener("visibilitychange", () => { if (document.hidden) saveWorkoutDraft(); });
+window.addEventListener("pagehide", saveWorkoutDraft);
+
+// ---------- safe storage reads ----------
+// A corrupt value used to throw on launch and leave a blank app. Now it's set
+// aside under "<key>_corrupt" (so nothing is destroyed) and the default is used.
+function readStoredJSON(key, fallback) {
+  const raw = localStorage.getItem(key);
+  if (raw == null || raw === "") return fallback;
+  try {
+    const v = JSON.parse(raw);
+    if (v == null) return fallback;
+    if (fallback !== null && (Array.isArray(fallback) !== Array.isArray(v) || typeof v !== typeof fallback)) throw new Error("unexpected shape");
+    return v;
+  } catch (e) {
+    try { localStorage.setItem(key + "_corrupt", raw); localStorage.removeItem(key); } catch (_) {} // moved aside once, not re-logged on every read
+    logAppError(e, "read " + key);
+    return fallback;
+  }
+}
+
+// ---------- error log + "something went wrong" toast ----------
+function logAppError(err, where) {
+  try {
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem("appErrorLog") || "[]"); } catch (_) {}
+    if (!Array.isArray(list)) list = [];
+    const v = (/[?&]v=(\d+)/.exec((document.querySelector('script[src*="app.js"]') || {}).src || "") || [])[1] || "";
+    list.unshift({
+      at: new Date().toISOString(), v, where: where || "",
+      msg: String((err && err.message) || err).slice(0, 300),
+      stack: String((err && err.stack) || "").slice(0, 1500),
+      screen: ((document.querySelector(".screen.active") || {}).id) || ""
+    });
+    localStorage.setItem("appErrorLog", JSON.stringify(list.slice(0, 10)));
+  } catch (_) {}
+}
+
+let appErrorToastAt = 0;
+function showAppErrorToast() {
+  if (Date.now() - appErrorToastAt < 10000) return;
+  appErrorToastAt = Date.now();
+  let t = document.getElementById("app-error-toast");
+  if (!t) { t = document.createElement("div"); t.id = "app-error-toast"; t.className = "app-toast"; t.setAttribute("role", "alert"); document.body.appendChild(t); }
+  t.innerHTML = `<span class="app-toast-text"><strong>Something went wrong.</strong> Your workout progress is saved.</span>
+    <button type="button" class="app-toast-copy">Copy details</button>
+    <button type="button" class="app-toast-close" aria-label="Dismiss">×</button>`;
+  t.hidden = false;
+  const hide = () => { t.hidden = true; };
+  const timer = setTimeout(hide, 10000);
+  t.querySelector(".app-toast-close").addEventListener("click", () => { clearTimeout(timer); hide(); });
+  t.querySelector(".app-toast-copy").addEventListener("click", e => {
+    const btn = e.currentTarget, text = localStorage.getItem("appErrorLog") || "[]";
+    clearTimeout(timer);
+    Promise.resolve().then(() => navigator.clipboard.writeText(text))
+      .then(() => { btn.textContent = "Copied ✓"; }, () => { btn.textContent = "Couldn't copy"; });
+  });
+}
+
+function onAppError(err, where) {
+  const msg = String((err && err.message) || err || "");
+  if (/ResizeObserver loop/i.test(msg)) return;
+  logAppError(err, where);
+  try { saveWorkoutDraft(); } catch (_) {}
+  if (msg && msg !== "Script error.") try { showAppErrorToast(); } catch (_) {}
+}
+
+// ============================================================
 // init — keep this LAST: updateHomeStats reads constants from every
 // module above (cardio, beer planner), which don't exist until defined.
 // ============================================================
 migrateFoodLogToLocalDays();
 updateHomeStats();
+offerWorkoutResume();
