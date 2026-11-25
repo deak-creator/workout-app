@@ -1136,10 +1136,22 @@ function openExerciseDetail(ex, returnTo, onDone) {
   saveWorkoutDraft();
 }
 
+// the next exercise still to log in the same workout / plan day (after this one, wrapping round)
+function nextExerciseAfter(ex) {
+  const data = draftContainer();
+  const path = draftPathOf(ex, data, draftKind);
+  if (!path) return null;
+  const blocks = draftKind === "workout" ? data.blocks : data.weeks[path[0]].days[path[1]].blocks;
+  const items = blocks.flatMap(b => b.items);
+  const i = items.indexOf(ex);
+  return [...items.slice(i + 1), ...items.slice(0, i)].find(x => !exerciseIsLogged(x)) || null;
+}
+
 function closeExerciseDetail(save) {
   const d = exDetail;
   if (!d) return;
   stopRestTimer();
+  const next = save ? nextExerciseAfter(d.ex) : null;
   if (save) {
     d.ex._log = d.log;
     d.ex._done = d.log.sets.some(st => st.done);
@@ -1150,6 +1162,8 @@ function closeExerciseDetail(save) {
   if (d.onDone) d.onDone();
   scrollScreenTo(d.scrollY);
   saveWorkoutDraft();
+  // Save goes straight on to the next exercise; once everything's logged you land on the list to Finish
+  if (next) openExerciseDetail(next, d.returnTo, d.onDone);
 }
 
 function renderExerciseDetail() {
@@ -1220,7 +1234,7 @@ function renderExerciseLogTab(body) {
     <textarea class="note-input" placeholder="Add your note here…"></textarea>
     <div class="exd-status"></div>
     <div class="log-actions">
-      <button type="button" class="primary-btn log-save-btn">Save Changes</button>
+      <button type="button" class="primary-btn log-save-btn">${nextExerciseAfter(exDetail.ex) ? "Save & Next Exercise" : "Save Changes"}</button>
       <button type="button" class="primary-btn secondary log-cancel-btn">Cancel</button>
     </div>
   `;
@@ -1247,11 +1261,25 @@ function renderExerciseLogTab(body) {
         <input type="number" inputmode="decimal" class="set-weight" placeholder="0" value="${st.weight}">
         <button type="button" class="set-check${st.done ? " done" : ""}" aria-label="Mark set ${i + 1} complete">✓</button>
       `;
-      // typing only updates the model, no re-render, so the iPhone keyboard stays open
-      r.querySelector(".set-reps").addEventListener("input", e => { st.reps = e.target.value; touchWorkoutDraft(true); });
-      r.querySelector(".set-weight").addEventListener("input", e => { st.weight = e.target.value; touchWorkoutDraft(true); });
+      // typing only updates the model, no re-render, so the iPhone keyboard stays open.
+      // Once reps AND weight are both filled the set ticks itself (0 kg counts, for bodyweight);
+      // clearing a field un-ticks it again, but only if it was ticked automatically.
+      const autoTick = () => {
+        const filled = parseFloat(st.reps) > 0 && String(st.weight).trim() !== "" && parseFloat(st.weight) >= 0;
+        if (filled && !st.done) { st.done = true; st._auto = true; }
+        else if (!filled && st.done && st._auto) { st.done = false; delete st._auto; }
+        else return;
+        r.classList.toggle("done", st.done);
+        r.querySelector(".set-check").classList.toggle("done", st.done);
+        refreshStatus();
+        touchWorkoutDraft(); // a tick is saved at once, like tapping ✓
+      };
+      r.querySelector(".set-reps").addEventListener("input", e => { st.reps = e.target.value; autoTick(); touchWorkoutDraft(true); });
+      r.querySelector(".set-weight").addEventListener("input", e => { st.weight = e.target.value; autoTick(); touchWorkoutDraft(true); });
       r.querySelector(".set-check").addEventListener("click", () => {
-        st.done = !st.done;
+        // tapping ✓ on a set that just ticked itself confirms it (old habit: fill in, then tap ✓)
+        // instead of un-ticking it; a second tap un-ticks as normal
+        if (st._auto) delete st._auto; else st.done = !st.done;
         renderSetRows();
         touchWorkoutDraft();
       });
